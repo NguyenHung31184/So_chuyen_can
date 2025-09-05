@@ -1,0 +1,5 @@
+{
+  "name": "Sổ chuyên cần điện tử",
+  "description": "Một ứng dụng web để theo dõi quá trình dạy và học của giáo viên và học viên, giúp quản lý khóa học, báo cáo và chi phí một cách hiệu quả.",
+  "requestFramePermissions": []
+}
