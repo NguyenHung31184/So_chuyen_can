@@ -1,12 +1,12 @@
 
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { AppContext } from '../contexts/AppContext';
-import { Session, SessionType } from '../types';
-import { VEHICLES } from '../data';
+import { Session, SessionType, TeacherSpecialty, Student } from '../types';
+// REMOVED: import { courseModules } from '../courseModules';
 
 interface NewSessionModalProps {
   onClose: () => void;
-  onSave: (session: Session) => void;
+  onSave: (session: Omit<Session, 'id'>) => void;
 }
 
 const CalendarIcon = () => (
@@ -18,148 +18,171 @@ const CalendarIcon = () => (
 const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) => {
   const context = useContext(AppContext);
 
-  const [sessionType, setSessionType] = useState<SessionType>(SessionType.PRACTICE);
-  const [date, setDate] = useState('2025-05-09');
-  const [practiceGroup, setPracticeGroup] = useState('');
-  const [equipment, setEquipment] = useState('Cần trục giàn cầu tàu QC');
+  // Session State
+  const [sessionType, setSessionType] = useState<SessionType>(SessionType.THEORY);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('06:00');
   const [endTime, setEndTime] = useState('12:00');
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [teacherId, setTeacherId] = useState('');
+  const [topic, setTopic] = useState('');
+  
+  // Attendance State
+  const [presentStudentIds, setPresentStudentIds] = useState<string[]>([]);
 
-  const teacherName = practiceGroup && context?.teachers.length ? context.teachers[0].name : '';
+  if (!context) return null;
 
+  const { courses, teachers, students } = context;
+
+  // Effect to reset attendance when course changes
+  useEffect(() => {
+    setPresentStudentIds([]);
+  }, [selectedCourseId]);
+
+  // Memoized list of available teachers
+  const availableTeachers = useMemo(() => {
+    if (!selectedCourseId) return [];
+    // This logic might need adjustment based on final data structure for teachers
+    const specialty = sessionType === SessionType.THEORY ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
+    return teachers.filter(t => t.specialty === specialty && t.courseIds?.includes(selectedCourseId));
+  }, [selectedCourseId, sessionType, teachers]);
+  
+  // Memoized list of students for the selected course
+  const courseStudents = useMemo(() => {
+      if (!selectedCourseId) return [];
+      return students.filter(s => s.courseId === selectedCourseId);
+  }, [selectedCourseId, students]);
+
+  // Handler for student attendance toggle
+  const handleAttendanceToggle = (studentId: string) => {
+      setPresentStudentIds(prev => 
+          prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+      );
+  };
+
+  // Form submission handler
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!context?.currentUser) return;
 
-    const newSession: Session = {
-      id: `ss${Date.now()}`,
-      type: sessionType,
-      date,
-      startTime,
-      endTime,
-      teacherId: context.currentUser.id,
-      groupId: practiceGroup,
-      equipment: sessionType === SessionType.PRACTICE ? equipment : undefined,
-      classId: context?.courses[0]?.id || 'c1', // Default to first course
-      studentIds: [], // Student selection is not part of this modal
+    if (!selectedCourseId || !teacherId || !topic) {
+        alert('Vui lòng điền đầy đủ thông tin.');
+        return;
+    }
+
+    const newSession: Omit<Session, 'id'> = {
+        type: sessionType,
+        date,
+        startTime,
+        endTime,
+        teacherId,
+        courseId: selectedCourseId,
+        topic,
+        studentIds: presentStudentIds, // Save the list of present students
+        classId: '' // Add a default or derived classId if needed
     };
+    
     onSave(newSession);
   };
 
+  const getCourseDisplayString = (courseId: string) => {
+      const course = courses.find(c => c.id === courseId);
+      if (!course) return 'N/A';
+      return `${course.name} - Khóa ${course.courseNumber}`;
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" aria-modal="true" role="dialog">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl transform transition-all">
-        <header className="p-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold" style={{ color: '#092d5c' }}>Ghi nhận buổi học mới</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800" aria-label="Đóng">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg transform transition-all">
+        <header className="p-5 flex justify-between items-center border-b">
+          <h2 className="text-xl font-bold text-gray-800">Ghi nhận buổi học mới</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Đóng">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </header>
 
         <form onSubmit={handleSubmit}>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-            {/* Row 1 */}
-            <div>
-              <label htmlFor="session-type" className="block text-sm font-medium text-gray-500 mb-1">Loại buổi học</label>
-              <select
-                id="session-type"
-                value={sessionType}
-                onChange={(e) => setSessionType(e.target.value as SessionType)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent appearance-none"
-              >
-                <option value={SessionType.PRACTICE}>Thực hành</option>
-                <option value={SessionType.THEORY}>Lý thuyết</option>
-              </select>
-            </div>
-            <div className="relative">
-              <label htmlFor="date" className="block text-sm font-medium text-gray-500 mb-1">Ngày</label>
-              <input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent pr-10"
-              />
-               <div className="absolute inset-y-0 right-0 top-7 pr-3 flex items-center pointer-events-none">
-                <CalendarIcon />
-              </div>
-            </div>
-            
-            <div className="md:col-span-2">
-              <label htmlFor="practice-group" className="block text-sm font-medium text-gray-500 mb-1">Nhóm thực hành</label>
-              <select
-                id="practice-group"
-                value={practiceGroup}
-                onChange={(e) => setPracticeGroup(e.target.value)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent appearance-none"
-              >
-                <option value="">Chọn nhóm</option>
-                <option value="g1">Nhóm 1</option>
-                <option value="g2">Nhóm 2</option>
-              </select>
-            </div>
-            
-            <div className="md:col-span-2">
-              <label htmlFor="teacher" className="block text-sm font-medium text-gray-500 mb-1">Giảng viên phụ trách</label>
-              <input
-                id="teacher"
-                type="text"
-                readOnly
-                value={teacherName}
-                placeholder="Vui lòng chọn nhóm"
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md cursor-not-allowed text-gray-500"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label htmlFor="equipment" className="block text-sm font-medium text-gray-500 mb-1">Thiết bị</label>
-              <select
-                id="equipment"
-                value={equipment}
-                onChange={(e) => setEquipment(e.target.value)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent appearance-none"
-              >
-                {VEHICLES.map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
+          <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="session-type" className="block text-sm font-medium text-gray-700">Loại buổi học</label>
+                  <select id="session-type" value={sessionType} onChange={(e) => setSessionType(e.target.value as SessionType)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary">
+                    <option value={SessionType.THEORY}>Lý thuyết</option>
+                    <option value={SessionType.PRACTICE}>Thực hành</option>
+                  </select>
+                </div>
+                <div className="relative">
+                  <label htmlFor="date" className="block text-sm font-medium text-gray-700">Ngày</label>
+                  <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary pr-10" />
+                  <div className="absolute inset-y-0 right-0 top-6 pr-3 flex items-center pointer-events-none"><CalendarIcon /></div>
+                </div>
             </div>
 
             <div>
-              <label htmlFor="start-time" className="block text-sm font-medium text-gray-500 mb-1">Giờ bắt đầu</label>
-              <input
-                id="start-time"
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
+                <label htmlFor="course" className="block text-sm font-medium text-gray-700">Khóa đào tạo</label>
+                <select id="course" value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary">
+                    <option value="">Chọn khóa đào tạo</option>
+                    {courses.map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
+                </select>
             </div>
+
             <div>
-              <label htmlFor="end-time" className="block text-sm font-medium text-gray-500 mb-1">Giờ kết thúc</label>
-              <input
-                id="end-time"
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="w-full p-3 bg-gray-100 border-transparent rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
+                <label htmlFor="teacher" className="block text-sm font-medium text-gray-700">Giảng viên phụ trách</label>
+                <select id="teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId}>
+                    <option value="">Chọn giảng viên</option>
+                    {availableTeachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+                </select>
+            </div>
+
+            <div>
+                <label htmlFor="topic" className="block text-sm font-medium text-gray-700">Nội dung giảng dạy</label>
+                <input 
+                    id="topic" 
+                    type="text" 
+                    value={topic} 
+                    onChange={(e) => setTopic(e.target.value)} 
+                    className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" 
+                    disabled={!selectedCourseId}
+                    placeholder="Nhập chủ đề buổi học..."
+                />
+            </div>
+
+            {/* === Student Attendance Section === */}
+            {courseStudents.length > 0 && (
+                <div className="border-t pt-4">
+                    <h4 className="text-md font-medium text-gray-800 mb-2">Điểm danh học viên</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {courseStudents.map(student => (
+                            <label key={student.id} className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    checked={presentStudentIds.includes(student.id)}
+                                    onChange={() => handleAttendanceToggle(student.id)}
+                                />
+                                <span>{student.name}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="start-time" className="block text-sm font-medium text-gray-700">Giờ bắt đầu</label>
+                  <input id="start-time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" />
+                </div>
+                <div>
+                  <label htmlFor="end-time" className="block text-sm font-medium text-gray-700">Giờ kết thúc</label>
+                  <input id="end-time" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" />
+                </div>
             </div>
           </div>
           
-          <footer className="p-6 bg-white flex justify-end gap-3 border-t border-gray-200 mt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-8 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-semibold transition-colors"
-            >
+          <footer className="p-4 bg-gray-50 flex justify-end gap-3 border-t">
+            <button type="button" onClick={onClose} className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 font-semibold transition-colors">
               Hủy
             </button>
-            <button
-              type="submit"
-              className="px-8 py-2 rounded-md font-semibold text-white transition-colors"
-              style={{ backgroundColor: '#092d5c', }}
-            >
+            <button type="submit" className="px-6 py-2 rounded-md font-semibold text-white bg-primary hover:bg-primary-dark transition-colors">
               Lưu lại
             </button>
           </footer>
@@ -168,6 +191,5 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
     </div>
   );
 };
-
 
 export default NewSessionModal;

@@ -1,134 +1,257 @@
-import React, { useContext } from 'react';
+
+import React, { useState, useContext, useMemo, useRef } from 'react';
 import { AppContext } from '../contexts/AppContext';
-import { Session } from '../types';
+import { Session, SessionType, Teacher, Course } from '../types'; // Import main types
+import * as XLSX from 'xlsx';
 
-interface StatCardProps {
-    // Fix: Explicitly use React.JSX.Element to resolve "Cannot find namespace 'JSX'" error.
-    icon: React.JSX.Element;
-    title: string;
-    value: string | number;
-    details: string[];
-    color: string;
-}
+// --- Reusable Modal Component for Creating/Editing ---
+const ScheduleModal = ({ 
+    isOpen, 
+    onClose, 
+    onSave, 
+    scheduleItem, 
+    teachers, 
+    courses 
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (item: Omit<Session, 'id'> | Session) => void;
+    scheduleItem: Session | null;
+    teachers: Teacher[];
+    courses: Course[];
+}) => {
+    if (!isOpen) return null;
 
-const StatCard: React.FC<StatCardProps> = ({ icon, title, value, details, color }) => {
+    // Initialize form with scheduleItem or defaults matching the Session type
+    const [formData, setFormData] = useState(
+        scheduleItem || { 
+            date: '', 
+            startTime: '', 
+            endTime: '', 
+            topic: '', 
+            courseId: '', 
+            teacherId: '', 
+            studentIds: [], // Default to empty array
+            type: SessionType.THEORY, // Default type
+        }
+    );
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave(formData); // FIX: Removed incorrect type assertion
+    };
+
     return (
-        <div className="bg-white p-6 rounded-xl shadow-md flex flex-col">
-            <div className="flex items-center">
-                <div className={`p-3 rounded-full ${color}`}>
-                    {icon}
-                </div>
-                <div className="ml-4">
-                    <p className="text-gray-500">{title}</p>
-                    <p className="text-3xl font-bold text-gray-900">{value}</p>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                <h3 className="font-bold text-xl text-gray-800 border-b pb-3 mb-4">
+                    {scheduleItem ? 'Chỉnh sửa Lịch đào tạo' : 'Tạo mới Lịch đào tạo'}
+                </h3>
+                <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <label className="block"><span className="text-gray-700">Ngày</span><input type="date" name="date" value={formData.date} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                         <label className="block"><span className="text-gray-700">Loại buổi học</span>
+                            <select name="type" value={formData.type} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                                <option value={SessionType.THEORY}>Lý thuyết</option>
+                                <option value={SessionType.PRACTICE}>Thực hành</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="block"><span className="text-gray-700">Bắt đầu</span><input type="time" name="startTime" value={formData.startTime} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                        <label className="block"><span className="text-gray-700">Kết thúc</span><input type="time" name="endTime" value={formData.endTime} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                    </div>
+                     <label className="block"><span className="text-gray-700">Khóa học</span>
+                        <select name="courseId" value={formData.courseId} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            <option value="" disabled>-- Chọn khóa học --</option>
+                            {courses.map(c => <option key={c.id} value={c.id}>{c.name} - {c.courseNumber}</option>)}
+                        </select>
+                    </label>
+                    <label className="block"><span className="text-gray-700">Nội dung công việc (Chủ đề)</span>
+                        <input type="text" name="topic" value={formData.topic} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
+                    </label>
+                     <label className="block"><span className="text-gray-700">Giáo viên (Chủ trì)</span>
+                        <select name="teacherId" value={formData.teacherId} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            <option value="" disabled>-- Chọn giáo viên --</option>
+                            {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                    </label>
+                    <div className="flex justify-end pt-4 mt-4 border-t">
+                        <button type="button" onClick={onClose} className="mr-3 bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Huỷ</button>
+                        <button type="submit" className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Lưu</button>
+                    </div>
+                </form>
             </div>
-            {details.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <p className="text-sm text-gray-600 font-semibold mb-1">Chi tiết:</p>
-                <ul className="text-sm text-gray-500 list-disc list-inside space-y-1">
-                  {details.map((detail, index) => <li key={index}>{detail}</li>)}
-                </ul>
-              </div>
-            )}
         </div>
     );
 };
-
 
 const OverviewScreen: React.FC = () => {
+    // --- CONTEXT and STATE ---
     const context = useContext(AppContext);
-    
-    // Use all sessions to represent "today's" activity
-    const todaySessions = context?.sessions || [];
-    const courseMap = new Map(context?.courses.map(c => [c.id, c.name]));
+    if (!context) throw new Error("AppContext must be used within an AppProvider");
+    const { sessions, teachers, courses, addSession, updateSession, deleteSession } = context;
 
-    // Group sessions by classId to process data per class
-    const sessionsByClass = todaySessions.reduce((acc, session) => {
-        const classId = session.classId;
-        if (!acc[classId]) {
-            acc[classId] = [];
+    const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingSchedule, setEditingSchedule] = useState<Session | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // --- HANDLERS ---
+    const handleRowClick = (id: string) => setSelectedScheduleId(prev => (prev === id ? null : id));
+
+    const handleCreate = () => {
+        setEditingSchedule(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = () => {
+        if (!selectedScheduleId) return;
+        const itemToEdit = sessions.find(item => item.id === selectedScheduleId);
+        if (itemToEdit) {
+            setEditingSchedule(itemToEdit);
+            setIsModalOpen(true);
         }
-        acc[classId].push(session);
-        return acc;
-    }, {} as Record<string, Session[]>);
+    };
 
-    // --- Card 1: Active Classes ---
-    const totalActiveClasses = Object.keys(sessionsByClass).length;
-    const activeClassDetails = Object.keys(sessionsByClass).map(classId => {
-        const sessionsInClass = sessionsByClass[classId];
-        const className = courseMap.get(classId) || `Lớp ID: ${classId}`;
-        const sessionTypes = [...new Set(sessionsInClass.map(s => s.type))].join(', ');
-        return `${sessionTypes} - ${className}`;
-    });
+    const handleCancel = async () => {
+        if (!selectedScheduleId) return;
+        if (window.confirm('Bạn có chắc chắn muốn huỷ lịch học này không?')) {
+            await deleteSession(selectedScheduleId);
+            setSelectedScheduleId(null);
+        }
+    };
 
-    // --- Card 2: Active Students ---
-    const totalActiveStudents = new Set(todaySessions.flatMap(s => s.studentIds)).size;
-    const studentDetails = Object.keys(sessionsByClass).map(classId => {
-        const sessionsInClass = sessionsByClass[classId];
-        const className = courseMap.get(classId) || `Lớp ID: ${classId}`;
-        const sessionTypes = [...new Set(sessionsInClass.map(s => s.type))].join(', ');
-        const studentCount = new Set(sessionsInClass.flatMap(s => s.studentIds)).size;
-        return `${sessionTypes} - ${className}: ${studentCount} học viên`;
-    });
+    const handleSave = async (itemToSave: Omit<Session, 'id'> | Session) => {
+        try {
+             if ('id' in itemToSave) { // Update
+                await updateSession(itemToSave as Session);
+            } else { // Create
+                await addSession(itemToSave as Omit<Session, 'id'>);
+            }
+            setIsModalOpen(false);
+            setEditingSchedule(null);
+        } catch (error) {
+            console.error("Failed to save session:", error);
+            alert("Lỗi: không thể lưu lịch học. Vui lòng thử lại.");
+        }
+    };
+    
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
 
-    // --- Card 3: Active Teachers ---
-    const totalActiveTeachers = new Set(todaySessions.map(s => s.teacherId)).size;
-    const teacherDetails = Object.keys(sessionsByClass).map(classId => {
-        const sessionsInClass = sessionsByClass[classId];
-        const className = courseMap.get(classId) || `Lớp ID: ${classId}`;
-        const sessionTypes = [...new Set(sessionsInClass.map(s => s.type))].join(', ');
-        const teacherCount = new Set(sessionsInClass.map(s => s.teacherId)).size;
-        return `${sessionTypes} - ${className}: ${teacherCount} giáo viên`;
-    });
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json<any>(worksheet);
+
+                const teacherNameMap = teachers.reduce((acc, teacher) => ({ ...acc, [teacher.name.toLowerCase()]: teacher.id }), {});
+                const courseNameMap = courses.reduce((acc, course) => ({...acc, [course.name.toLowerCase()]: course.id}), {});
+
+                const newSessions: Omit<Session, 'id'>[] = [];
+                for (const row of json) {
+                    const teacherId = teacherNameMap[row['Chủ trì']?.trim().toLowerCase()];
+                    const courseId = courseNameMap[row['Khóa học']?.trim().toLowerCase()];
+                    
+                    if (!teacherId || !courseId) {
+                        console.warn("Skipping row due to missing teacher or course:", row);
+                        continue; // Skip rows without a valid teacher or course
+                    }
+                    
+                    newSessions.push({
+                        date: new Date(row['Ngày']).toISOString().split('T')[0],
+                        startTime: row['Bắt đầu'],
+                        endTime: row['Kết thúc'],
+                        topic: row['Nội dung công việc'],
+                        teacherId,
+                        courseId,
+                        studentIds: [], // Placeholder
+                        type: row['Loại'] === 'Thực hành' ? SessionType.PRACTICE : SessionType.THEORY,
+                    });
+                }
+
+                if(window.confirm(`Bạn có muốn nhập ${newSessions.length} lịch học mới không?`)){
+                    for(const session of newSessions){
+                        await addSession(session);
+                    }
+                    alert(`Đã nhập thành công ${newSessions.length} lịch học!`);
+                }
+
+            } catch (error) {
+                console.error("Error processing Excel file:", error);
+                alert("Đã có lỗi xảy ra khi xử lý file.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        event.target.value = ''; // Reset file input
+    };
+
+    const getDayOfWeek = (dateString: string) => {
+         const date = new Date(dateString);
+         const dayIndex = date.getUTCDay();
+         const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+         return days[dayIndex];
+    }
+
+    const teacherMap = useMemo(() => teachers.reduce((acc, t) => ({...acc, [t.id]: t.name}), {}), [teachers]);
 
     return (
-        <div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Tổng quan hôm nay</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 <StatCard 
-                    icon={<BookOpenIcon />}
-                    title="Số lớp đang học"
-                    value={totalActiveClasses}
-                    details={activeClassDetails}
-                    color="bg-blue-100 text-blue-600"
-                />
-                <StatCard 
-                    icon={<UsersIcon />}
-                    title="Tổng số học viên đang học"
-                    value={totalActiveStudents}
-                    details={studentDetails}
-                    color="bg-green-100 text-green-600"
-                />
-                <StatCard 
-                    icon={<UserCircleIcon />}
-                    title="Số giáo viên đang giảng dạy"
-                    value={totalActiveTeachers}
-                    details={teacherDetails}
-                    color="bg-indigo-100 text-indigo-600"
-                />
+        <div className="p-4 md:p-6 lg:p-8 space-y-6 bg-gray-100 min-h-screen">
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept=".xlsx, .xls" />
+            <ScheduleModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} scheduleItem={editingSchedule} teachers={teachers} courses={courses} />
+            
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <h3 className="font-bold text-lg text-gray-800 mb-4">Dự kiến lịch đào tạo tuần</h3>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full border-t border-gray-200">
+                        <thead className="bg-gray-50"> 
+                             <tr>
+                                {['Thứ/Ngày', 'Thời gian', 'Nội dung công việc', 'Loại', 'Chủ trì'].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">{h}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white">
+                            {sessions.length === 0 ? (
+                                <tr><td colSpan={5} className="text-center py-16 text-gray-500 border-b">Không có lịch đào tạo.</td></tr>
+                            ) : (
+                                [...sessions].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(item => (
+                                    <tr key={item.id} onClick={() => handleRowClick(item.id)} className={`cursor-pointer border-b ${selectedScheduleId === item.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800">
+                                            <div>{getDayOfWeek(item.date)}</div>
+                                            <div>{new Date(item.date).toLocaleDateString('vi-VN', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{item.startTime} - {item.endTime}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{item.topic}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{item.type}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{teacherMap[item.teacherId] || 'N/A'}</td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="flex items-center flex-wrap gap-2 pt-4 mt-4 border-t">
+                    <button onClick={handleCreate} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Tạo mới</button>
+                    <button onClick={handleEdit} disabled={!selectedScheduleId} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 disabled:bg-gray-400">Chỉnh sửa</button>
+                    <button onClick={handleCancel} disabled={!selectedScheduleId} className="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 disabled:bg-gray-400">Huỷ</button>
+                    <button onClick={handleImportClick} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700">Nhập từ Excel</button>
+                </div>
             </div>
         </div>
     );
 };
-
-
-const BookOpenIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-  </svg>
-);
-
-const UsersIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.124-1.282-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.124-1.282.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-);
-
-const UserCircleIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
 
 export default OverviewScreen;
