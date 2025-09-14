@@ -4,16 +4,17 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// TODO: Add your web app's Firebase configuration
 // Your web app's Firebase configuration
+// For more information on how to get this object, see the following link:
+// https://firebase.google.com/docs/web/setup#add-sdks-initialize
 const firebaseConfig = {
-  apiKey: "AIzaSyCrWeudlRw25RPxV_csPe4NuOawuacOySw",
-  authDomain: "so-theo-doi-dien-tu.firebaseapp.com",
-  projectId: "so-theo-doi-dien-tu",
-  storageBucket: "so-theo-doi-dien-tu.firebasestorage.app",
-  messagingSenderId: "1065814903",
-  appId: "1:1065814903:web:23266146d7e725dfa02f72",
-  measurementId: "G-TJW8PKYQ24"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
