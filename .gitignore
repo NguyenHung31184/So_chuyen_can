@@ -1,2 +1,5 @@
 # Firebase
 .env
+
+# Dependencies
+/node_modules

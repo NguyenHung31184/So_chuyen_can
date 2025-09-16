@@ -1,8 +1,38 @@
 
 import React, { useState, useContext, useMemo } from 'react';
-import { AppContext } from '../contexts/AppContext';
-import { Course, Session, Student, Teacher } from '../types';
+import { AppContext, AppContextType } from '../contexts/AppContext';
+import { Course, Session, Student, User, UserRole } from '../types';
 import * as XLSX from 'xlsx';
+
+// --- HÀM HỖ TRỢ: Chuyển đổi an toàn từ mọi định dạng sang Date ---
+const toDate = (value: any): Date | null => {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate();
+    if (typeof value === 'string') {
+        let date: Date | null = null;
+        const partsSlash = value.split('/');
+        if (partsSlash.length === 3) {
+            const [day, month, year] = partsSlash.map(Number);
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                date = new Date(year, month - 1, day);
+            }
+        }
+        if (!date || isNaN(date.getTime())) {
+            date = new Date(value);
+        }
+        if (date && !isNaN(date.getTime())) {
+            return date;
+        }
+    }
+    if (typeof value === 'number') {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+    }
+    return null;
+};
+
 
 // --- Modal Component for Details ---
 const DetailModal = ({ isOpen, onClose, title, headers, data, onExport }) => {
@@ -25,7 +55,7 @@ const DetailModal = ({ isOpen, onClose, title, headers, data, onExport }) => {
                                 <tr><td colSpan={headers.length} className="text-center py-4 text-gray-500">Không có dữ liệu chi tiết</td></tr>
                             ) : data.map((row, index) => (
                                 <tr key={index}>
-                                    {headers.map(header => <td key={header} className="px-4 py-3 text-sm whitespace-nowrap">{row[header]}</td>)}
+                                    {headers.map(header => <td key={header} className="px-4 py-3 text-sm whitespace-nowrap">{String(row[header] ?? '')}</td>)}
                                 </tr>
                             ))}
                         </tbody>
@@ -53,21 +83,26 @@ const ReportScreen: React.FC = () => {
         const course = courses.find(c => c.id === courseId);
         return course ? `${course.name} - Khóa ${course.courseNumber}` : 'N/A';
     };
-    const formatCurrency = (value: number) => value ? value.toLocaleString('vi-VN') + ' VND' : '0 VND';
-    const formatDate = (date: string) => new Date(date).toLocaleDateString('vi-VN');
+    const formatCurrency = (value: number) => !isNaN(value) ? value.toLocaleString('vi-VN') + ' VND' : '0 VND';
+    const formatDate = (date: Date | null) => date ? date.toLocaleDateString('vi-VN') : 'N/A';
     const calculateDuration = (startTime: string, endTime: string) => {
-        return (new Date(`1970-01-01T${endTime}:00`).getTime() - new Date(`1970-01-01T${startTime}:00`).getTime()) / (1000 * 60 * 60);
+        if (!startTime || !endTime) return 0;
+        return (new Date(`1970-01-01T${endTime}`).getTime() - new Date(`1970-01-01T${startTime}`).getTime()) / (1000 * 60 * 60);
     };
 
     if (!context) return <div className="p-6">Đang tải dữ liệu...</div>;
-    const { courses, teachers, students, sessions } = context;
+    const { courses, users, students, sessions } = context as AppContextType;
+    
+    const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
 
     // --- Filtered Data ---
     const filteredSessions = useMemo(() => {
-        return sessions.filter(session => {
-            const sessionDate = new Date(session.date);
-            const start = startDate ? new Date(startDate) : null;
-            const end = endDate ? new Date(endDate) : null;
+        return (sessions || []).filter(session => {
+            const sessionDate = toDate(session.date);
+            if (!sessionDate) return false;
+
+            const start = startDate ? toDate(startDate) : null;
+            const end = endDate ? toDate(endDate) : null;
             if (start && sessionDate < start) return false;
             if (end && sessionDate > end) return false;
             if (selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
@@ -77,40 +112,56 @@ const ReportScreen: React.FC = () => {
 
     // --- Main Reports Data Calculation ---
     const teacherReportData = useMemo(() => {
-        const report: { [key: string]: { teacher: Teacher, theoryHours: number, practiceHours: number, totalHours: number } } = {};
-        filteredSessions.forEach(session => {
-            const teacher = teachers.find(t => t.id === session.teacherId);
-            if (!teacher) return;
-            if (!report[teacher.id]) {
-                report[teacher.id] = { teacher, theoryHours: 0, practiceHours: 0, totalHours: 0 };
-            }
-            const duration = calculateDuration(session.startTime, session.endTime);
-            if (session.type === 'Theory') report[teacher.id].theoryHours += duration;
-            else report[teacher.id].practiceHours += duration;
-            report[teacher.id].totalHours += duration;
+        // B1: Xác định danh sách giáo viên cần báo cáo
+        const relevantTeachers = selectedCourseId === 'all'
+            ? teachers // Nếu chọn tất cả, lấy hết giáo viên
+            : teachers.filter(t => (t.courseIds || []).includes(selectedCourseId)); // Nếu chọn khóa học, chỉ lấy GV của khóa đó
+
+        // B2: Khởi tạo báo cáo cho tất cả giáo viên liên quan với số giờ bằng 0
+        const report: { [key: string]: { teacher: User, theoryHours: number, practiceHours: number, totalHours: number } } = {};
+        relevantTeachers.forEach(teacher => {
+            report[teacher.id] = { teacher, theoryHours: 0, practiceHours: 0, totalHours: 0 };
         });
+
+        // B3: Lặp qua các buổi học đã được lọc để tính toán số giờ giảng dạy
+        filteredSessions.forEach(session => {
+            // Chỉ tính nếu giáo viên của buổi học đó có trong báo cáo
+            if (report[session.teacherId]) {
+                const duration = calculateDuration(session.startTime, session.endTime);
+                if (session.type === 'Lý thuyết') {
+                    report[session.teacherId].theoryHours += duration;
+                }
+                else {
+                    report[session.teacherId].practiceHours += duration;
+                }
+                report[session.teacherId].totalHours += duration;
+            }
+        });
+
+        // B4: Trả về mảng kết quả
         return Object.values(report).sort((a, b) => b.totalHours - a.totalHours);
-    }, [filteredSessions, teachers]);
+    }, [filteredSessions, teachers, selectedCourseId]);
 
     const studentReportData = useMemo(() => {
-        if (selectedCourseId === 'all') return [];
+        if (selectedCourseId === 'all' || !students) return [];
         const courseStudents = students.filter(s => s.courseId === selectedCourseId);
-        const courseSessions = sessions.filter(s => s.courseId === selectedCourseId);
+        const courseSessions = (sessions || []).filter(s => s.courseId === selectedCourseId);
         const totalSessions = courseSessions.length;
+
         return courseStudents.map(student => {
-            const attendedSessions = courseSessions.filter(s => s.studentIds.includes(student.id)).length;
+            const attendedSessions = courseSessions.filter(s => (s.studentIds || []).includes(student.id)).length;
             const attendancePercentage = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0;
             return { student, attendedSessions, totalSessions, attendancePercentage };
         }).sort((a, b) => a.student.name.localeCompare(b.student.name));
     }, [students, sessions, selectedCourseId]);
 
     const costReportData = useMemo(() => {
-        if (selectedCourseId === 'all') return [];
+        if (selectedCourseId === 'all' || !students || !sessions) return [];
         const courseStudentsCount = students.filter(s => s.courseId === selectedCourseId).length;
         const courseSessions = sessions.filter(s => s.courseId === selectedCourseId);
 
-        const theoryHours = courseSessions.filter(s => s.type === 'Theory').reduce((acc, s) => acc + calculateDuration(s.startTime, s.endTime), 0);
-        const practiceHours = courseSessions.filter(s => s.type === 'Practice').reduce((acc, s) => acc + calculateDuration(s.startTime, s.endTime), 0);
+        const theoryHours = courseSessions.filter(s => s.type === 'Lý thuyết').reduce((acc, s) => acc + calculateDuration(s.startTime, s.endTime), 0);
+        const practiceHours = courseSessions.filter(s => s.type === 'Thực hành').reduce((acc, s) => acc + calculateDuration(s.startTime, s.endTime), 0);
 
         const DIESEL_CONSUMPTION_RATE = 20; // lít/giờ
         const DIESEL_PRICE = 25000; // VND/lít
@@ -155,10 +206,10 @@ const ReportScreen: React.FC = () => {
                     .filter(s => s.teacherId === teacher.id)
                     .map((s, i) => ({
                         'STT': i + 1,
-                        'Ngày': formatDate(s.date),
+                        'Ngày': formatDate(toDate(s.date)),
                         'Khóa học': getCourseDisplayString(courses, s.courseId),
                         'Nội dung buổi học': s.topic,
-                        'Loại buổi học': s.type === 'Theory' ? 'Lý thuyết' : 'Thực hành',
+                        'Loại buổi học': s.type,
                         'Thời lượng (giờ)': calculateDuration(s.startTime, s.endTime).toFixed(2),
                     }));
                 break;
@@ -167,19 +218,19 @@ const ReportScreen: React.FC = () => {
                 detailTitle = `Báo cáo chi tiết cho học viên: ${student.name}`;
                 fileName = `ChiTiet_HocVien_${student.name.replace(/ /g, '_')}`;
                 detailHeaders = ['STT', 'Ngày', 'Nội dung buổi học', 'Trạng thái'];
-                 detailData = sessions
+                 detailData = (sessions || [])
                     .filter(s => s.courseId === student.courseId)
                     .map((s, i) => ({
                         'STT': i + 1,
-                        'Ngày': formatDate(s.date),
+                        'Ngày': formatDate(toDate(s.date)),
                         'Nội dung buổi học': s.topic,
-                        'Trạng thái': s.studentIds.includes(student.id) ? 'Có mặt' : 'Vắng mặt',
+                        'Trạng thái': (s.studentIds || []).includes(student.id) ? 'Có mặt' : 'Vắng mặt',
                     }));
                 break;
             case 'cost_theory_teacher':
             case 'cost_practice_teacher':
-                const sessionType = reportType === 'cost_theory_teacher' ? 'Theory' : 'Practice';
-                detailTitle = `Chi tiết thù lao giáo viên - ${sessionType === 'Theory' ? 'Lý thuyết' : 'Thực hành'}`;
+                const sessionType = reportType === 'cost_theory_teacher' ? 'Lý thuyết' : 'Thực hành';
+                detailTitle = `Chi tiết thù lao giáo viên - ${sessionType}`;
                 fileName = `ChiTiet_ThuLao_GV_${sessionType}`;
                 detailHeaders = ['STT', 'Tên giáo viên', 'Số giờ', 'Đơn giá (VND/giờ)', 'Thành tiền (VND)'];
                 
@@ -206,7 +257,7 @@ const ReportScreen: React.FC = () => {
                 detailTitle = `Chi tiết chi phí - ${costType}`;
                 fileName = `ChiTiet_ChiPhi_${costType.replace(/ /g, '_')}`;
                 detailHeaders = ['STT', 'Tên học viên', 'Khóa đào tạo', 'Đơn giá (VND)'];
-                detailData = students
+                detailData = (students || [])
                     .filter(s => s.courseId === selectedCourseId)
                     .map((s, i) => ({
                         'STT': i + 1,
@@ -227,13 +278,13 @@ const ReportScreen: React.FC = () => {
                 detailHeaders = ['STT', 'Ngày', 'Nội dung buổi học (Thiết bị)', 'Thời lượng hoạt động (giờ)', `Định mức tiêu thụ (${unit})`, `Tổng tiêu thụ (${totalUnit})`, 'Đơn giá', 'Thành tiền (VND)'];
                 
                 detailData = filteredSessions
-                    .filter(s => s.type === 'Practice' && s.courseId === selectedCourseId)
+                    .filter(s => s.type === 'Thực hành' && s.courseId === selectedCourseId)
                     .map((s, i) => {
                         const duration = calculateDuration(s.startTime, s.endTime);
                         const consumption = duration * rate;
                         return {
                             'STT': i + 1,
-                            'Ngày': formatDate(s.date),
+                            'Ngày': formatDate(toDate(s.date)),
                             'Nội dung buổi học (Thiết bị)': s.topic,
                             'Thời lượng hoạt động (giờ)': duration.toFixed(2),
                             [`Định mức tiêu thụ (${unit})`]: rate,
@@ -245,23 +296,23 @@ const ReportScreen: React.FC = () => {
                 break;
         }
 
+        const finalData = detailData.map(row => {
+            const newRow = {...row};
+            for(const key in newRow) {
+                newRow[key] = String(newRow[key]);
+            }
+            return newRow;
+       });
+
         if (actionType === 'export') {
-            const exportableData = detailData.map(row => {
-                 const newRow = {...row};
-                 // Make sure all values are strings for excel export
-                 for(const key in newRow) {
-                     newRow[key] = String(newRow[key]);
-                 }
-                 return newRow;
-            });
-            exportExcel(exportableData, fileName, 'ChiTiet');
+            exportExcel(finalData, fileName, 'ChiTiet');
         } else {
             setModalState({
                 isOpen: true,
                 title: detailTitle,
                 headers: detailHeaders,
-                data: detailData,
-                onExport: () => exportExcel(detailData, fileName, 'ChiTiet')
+                data: finalData,
+                onExport: () => exportExcel(finalData, fileName, 'ChiTiet')
             });
         }
     };
@@ -290,9 +341,9 @@ const ReportScreen: React.FC = () => {
         <div className="bg-white p-6 rounded-xl shadow-md">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-lg text-gray-800">{title}</h3>
-                <button onClick={() => handleSummaryExport(type)} disabled={summaryDisabled} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Xuất Báo cáo Tổng hợp</button>
+                <button onClick={() => handleSummaryExport(type)} disabled={summaryDisabled || data.length === 0} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Xuất Báo cáo Tổng hợp</button>
             </div>
-            {summaryDisabled ? (
+            {summaryDisabled && type !== 'teacher' ? (
                 <p className="text-sm text-center text-gray-500 py-4">Vui lòng chọn một khóa đào tạo cụ thể để xem báo cáo.</p>
             ) : (
                 <div className="overflow-x-auto">
@@ -333,7 +384,7 @@ const ReportScreen: React.FC = () => {
                     <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md" title="Đến ngày"/>
                     <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md">
                         <option value="all">Tất cả khóa đào tạo</option>
-                        {courses.map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(courses, c.id)}</option>)}
+                        {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(courses, c.id)}</option>)}
                     </select>
                 </div>
             </div>

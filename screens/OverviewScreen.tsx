@@ -1,39 +1,25 @@
 
 import React, { useState, useContext, useMemo, useRef } from 'react';
-import { AppContext } from '../contexts/AppContext';
-import { Session, SessionType, Teacher, Course } from '../types'; // Import main types
+import { AppContext, AppContextType } from '../contexts/AppContext';
+import { Session, WeeklyPlan, UserRole } from '../types';
 import * as XLSX from 'xlsx';
 
-// --- Reusable Modal Component for Creating/Editing ---
-const ScheduleModal = ({ 
+// --- COMPONENT: Modal for PLANNED schedule ---
+const PlanModal = ({ 
     isOpen, 
     onClose, 
     onSave, 
-    scheduleItem, 
-    teachers, 
-    courses 
+    planItem 
 }: {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (item: Omit<Session, 'id'> | Session) => void;
-    scheduleItem: Session | null;
-    teachers: Teacher[];
-    courses: Course[];
+    onSave: (item: Omit<WeeklyPlan, 'id'> | WeeklyPlan) => void;
+    planItem: WeeklyPlan | null;
 }) => {
     if (!isOpen) return null;
 
-    // Initialize form with scheduleItem or defaults matching the Session type
     const [formData, setFormData] = useState(
-        scheduleItem || { 
-            date: '', 
-            startTime: '', 
-            endTime: '', 
-            topic: '', 
-            courseId: '', 
-            teacherId: '', 
-            studentIds: [], // Default to empty array
-            type: SessionType.THEORY, // Default type
-        }
+        planItem || { date: '', timeRange: '', content: '', type: 'Lý thuyết', instructor: '' }
     );
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -43,47 +29,26 @@ const ScheduleModal = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(formData); // FIX: Removed incorrect type assertion
+        onSave(formData as WeeklyPlan);
     };
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center">
-            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-                <h3 className="font-bold text-xl text-gray-800 border-b pb-3 mb-4">
-                    {scheduleItem ? 'Chỉnh sửa Lịch đào tạo' : 'Tạo mới Lịch đào tạo'}
-                </h3>
-                <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto pr-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <label className="block"><span className="text-gray-700">Ngày</span><input type="date" name="date" value={formData.date} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
-                         <label className="block"><span className="text-gray-700">Loại buổi học</span>
-                            <select name="type" value={formData.type} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                <option value={SessionType.THEORY}>Lý thuyết</option>
-                                <option value={SessionType.PRACTICE}>Thực hành</option>
-                            </select>
-                        </label>
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg">
+                <h3 className="font-bold text-xl mb-4 border-b pb-2">{planItem ? 'Chỉnh sửa Kế hoạch' : 'Tạo mới Kế hoạch'}</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="block"><span className="text-gray-700">Ngày</span><input type="date" name="date" value={formData.date} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                        <label className="block"><span className="text-gray-700">Thời gian</span><input type="text" name="timeRange" placeholder="VD: 08:00 - 12:00" value={formData.timeRange} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label className="block"><span className="text-gray-700">Bắt đầu</span><input type="time" name="startTime" value={formData.startTime} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
-                        <label className="block"><span className="text-gray-700">Kết thúc</span><input type="time" name="endTime" value={formData.endTime} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                    <label className="block"><span className="text-gray-700">Nội dung công việc</span><input type="text" name="content" value={formData.content} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="block"><span className="text-gray-700">Loại</span><input type="text" name="type" value={formData.type} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
+                        <label className="block"><span className="text-gray-700">Chủ trì</span><input type="text" name="instructor" value={formData.instructor} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" /></label>
                     </div>
-                     <label className="block"><span className="text-gray-700">Khóa học</span>
-                        <select name="courseId" value={formData.courseId} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                            <option value="" disabled>-- Chọn khóa học --</option>
-                            {courses.map(c => <option key={c.id} value={c.id}>{c.name} - {c.courseNumber}</option>)}
-                        </select>
-                    </label>
-                    <label className="block"><span className="text-gray-700">Nội dung công việc (Chủ đề)</span>
-                        <input type="text" name="topic" value={formData.topic} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
-                    </label>
-                     <label className="block"><span className="text-gray-700">Giáo viên (Chủ trì)</span>
-                        <select name="teacherId" value={formData.teacherId} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                            <option value="" disabled>-- Chọn giáo viên --</option>
-                            {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                    </label>
                     <div className="flex justify-end pt-4 mt-4 border-t">
-                        <button type="button" onClick={onClose} className="mr-3 bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Huỷ</button>
-                        <button type="submit" className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Lưu</button>
+                        <button type="button" onClick={onClose} className="mr-3 bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg">Huỷ</button>
+                        <button type="submit" className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Lưu</button>
                     </div>
                 </form>
             </div>
@@ -91,57 +56,70 @@ const ScheduleModal = ({
     );
 };
 
+// --- MAIN SCREEN COMPONENT ---
 const OverviewScreen: React.FC = () => {
     // --- CONTEXT and STATE ---
     const context = useContext(AppContext);
-    if (!context) throw new Error("AppContext must be used within an AppProvider");
-    const { sessions, teachers, courses, addSession, updateSession, deleteSession } = context;
+    if (!context) throw new Error("Context is not available");
+    const { weeklyPlans, sessions, users, courses, addWeeklyPlan, updateWeeklyPlan, deleteWeeklyPlan } = context as AppContextType;
 
-    const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingSchedule, setEditingSchedule] = useState<Session | null>(null);
+    const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+    const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<WeeklyPlan | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // --- HANDLERS ---
-    const handleRowClick = (id: string) => setSelectedScheduleId(prev => (prev === id ? null : id));
+    // --- MEMOIZED DATA for performance ---
+    const teacherMap = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER).reduce((acc, t) => ({ ...acc, [t.id]: t.name }), {}), [users]);
+    const courseMap = useMemo(() => (courses || []).reduce((acc, c) => ({ ...acc, [c.id]: `${c.name} - ${c.courseNumber}` }), {}), [courses]);
 
-    const handleCreate = () => {
-        setEditingSchedule(null);
-        setIsModalOpen(true);
+    // --- UTILITY FUNCTIONS ---
+    const getDayOfWeek = (dateString: string) => {
+        const date = new Date(dateString);
+        const dayIndex = date.getUTCDay();
+        const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+        return days[dayIndex];
     };
 
-    const handleEdit = () => {
-        if (!selectedScheduleId) return;
-        const itemToEdit = sessions.find(item => item.id === selectedScheduleId);
+    // --- HANDLERS for PLANNED SCHEDULE ---
+    const handlePlanRowClick = (id: string) => setSelectedPlanId(prev => (prev === id ? null : id));
+
+    const handleCreatePlan = () => {
+        setEditingPlan(null);
+        setIsPlanModalOpen(true);
+    };
+
+    const handleEditPlan = () => {
+        if (!selectedPlanId) return;
+        const itemToEdit = weeklyPlans.find(item => item.id === selectedPlanId);
         if (itemToEdit) {
-            setEditingSchedule(itemToEdit);
-            setIsModalOpen(true);
+            setEditingPlan(itemToEdit);
+            setIsPlanModalOpen(true);
         }
     };
 
-    const handleCancel = async () => {
-        if (!selectedScheduleId) return;
-        if (window.confirm('Bạn có chắc chắn muốn huỷ lịch học này không?')) {
-            await deleteSession(selectedScheduleId);
-            setSelectedScheduleId(null);
+    const handleDeletePlan = async () => {
+        if (!selectedPlanId) return;
+        if (window.confirm('Bạn có chắc chắn muốn xóa kế hoạch này?')) {
+            await deleteWeeklyPlan(selectedPlanId);
+            setSelectedPlanId(null);
         }
     };
 
-    const handleSave = async (itemToSave: Omit<Session, 'id'> | Session) => {
+    const handleSavePlan = async (itemToSave: Omit<WeeklyPlan, 'id'> | WeeklyPlan) => {
         try {
-             if ('id' in itemToSave) { // Update
-                await updateSession(itemToSave as Session);
-            } else { // Create
-                await addSession(itemToSave as Omit<Session, 'id'>);
+            if ('id' in itemToSave) {
+                await updateWeeklyPlan(itemToSave as WeeklyPlan);
+            } else {
+                await addWeeklyPlan(itemToSave as Omit<WeeklyPlan, 'id'>);
             }
-            setIsModalOpen(false);
-            setEditingSchedule(null);
+            setIsPlanModalOpen(false);
+            setEditingPlan(null);
         } catch (error) {
-            console.error("Failed to save session:", error);
-            alert("Lỗi: không thể lưu lịch học. Vui lòng thử lại.");
+            console.error("Failed to save plan:", error);
+            alert("Lỗi: không thể lưu kế hoạch.");
         }
     };
-    
+
     const handleImportClick = () => {
         fileInputRef.current?.click();
     };
@@ -157,86 +135,57 @@ const OverviewScreen: React.FC = () => {
                 const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
-                const json = XLSX.utils.sheet_to_json<any>(worksheet);
+                const json = XLSX.utils.sheet_to_json<any>(worksheet, { raw: false });
 
-                const teacherNameMap = teachers.reduce((acc, teacher) => ({ ...acc, [teacher.name.toLowerCase()]: teacher.id }), {});
-                const courseNameMap = courses.reduce((acc, course) => ({...acc, [course.name.toLowerCase()]: course.id}), {});
+                const newPlans: Omit<WeeklyPlan, 'id'>[] = json.map(row => ({
+                    date: new Date(row['Ngày']).toISOString().split('T')[0],
+                    timeRange: row['Thời gian'] || '',
+                    content: row['Nội dung công việc'] || '',
+                    type: row['Loại'] || '',
+                    instructor: row['Chủ trì'] || '',
+                }));
 
-                const newSessions: Omit<Session, 'id'>[] = [];
-                for (const row of json) {
-                    const teacherId = teacherNameMap[row['Chủ trì']?.trim().toLowerCase()];
-                    const courseId = courseNameMap[row['Khóa học']?.trim().toLowerCase()];
-                    
-                    if (!teacherId || !courseId) {
-                        console.warn("Skipping row due to missing teacher or course:", row);
-                        continue; // Skip rows without a valid teacher or course
+                if (window.confirm(`Bạn có muốn nhập ${newPlans.length} kế hoạch mới không?`)) {
+                    for (const plan of newPlans) {
+                        await addWeeklyPlan(plan);
                     }
-                    
-                    newSessions.push({
-                        date: new Date(row['Ngày']).toISOString().split('T')[0],
-                        startTime: row['Bắt đầu'],
-                        endTime: row['Kết thúc'],
-                        topic: row['Nội dung công việc'],
-                        teacherId,
-                        courseId,
-                        studentIds: [], // Placeholder
-                        type: row['Loại'] === 'Thực hành' ? SessionType.PRACTICE : SessionType.THEORY,
-                    });
-                }
-
-                if(window.confirm(`Bạn có muốn nhập ${newSessions.length} lịch học mới không?`)){
-                    for(const session of newSessions){
-                        await addSession(session);
-                    }
-                    alert(`Đã nhập thành công ${newSessions.length} lịch học!`);
+                    alert(`Đã nhập thành công ${newPlans.length} kế hoạch!`);
                 }
 
             } catch (error) {
                 console.error("Error processing Excel file:", error);
-                alert("Đã có lỗi xảy ra khi xử lý file.");
+                alert("Lỗi khi xử lý file Excel.");
             }
         };
         reader.readAsArrayBuffer(file);
         event.target.value = ''; // Reset file input
     };
 
-    const getDayOfWeek = (dateString: string) => {
-         const date = new Date(dateString);
-         const dayIndex = date.getUTCDay();
-         const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-         return days[dayIndex];
-    }
-
-    const teacherMap = useMemo(() => teachers.reduce((acc, t) => ({...acc, [t.id]: t.name}), {}), [teachers]);
-
+    // --- RENDER ---
     return (
-        <div className="p-4 md:p-6 lg:p-8 space-y-6 bg-gray-100 min-h-screen">
+        <div className="p-4 md:p-6 lg:p-8 space-y-8 bg-gray-100 min-h-screen">
             <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept=".xlsx, .xls" />
-            <ScheduleModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} scheduleItem={editingSchedule} teachers={teachers} courses={courses} />
-            
+            <PlanModal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} onSave={handleSavePlan} planItem={editingPlan} />
+
+            {/* Planned Schedule Section */}
             <div className="bg-white p-6 rounded-xl shadow-md">
                 <h3 className="font-bold text-lg text-gray-800 mb-4">Dự kiến lịch đào tạo tuần</h3>
                 <div className="overflow-x-auto">
                     <table className="min-w-full border-t border-gray-200">
-                        <thead className="bg-gray-50"> 
-                             <tr>
-                                {['Thứ/Ngày', 'Thời gian', 'Nội dung công việc', 'Loại', 'Chủ trì'].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">{h}</th>)}
-                            </tr>
+                        <thead className="bg-gray-50">
+                            <tr>{['Thứ/Ngày', 'Thời gian', 'Nội dung công việc', 'Loại', 'Chủ trì'].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">{h}</th>)}</tr>
                         </thead>
                         <tbody className="bg-white">
-                            {sessions.length === 0 ? (
-                                <tr><td colSpan={5} className="text-center py-16 text-gray-500 border-b">Không có lịch đào tạo.</td></tr>
+                            {weeklyPlans.length === 0 ? (
+                                <tr><td colSpan={5} className="text-center py-16 text-gray-500">Chưa có kế hoạch dự kiến.</td></tr>
                             ) : (
-                                [...sessions].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(item => (
-                                    <tr key={item.id} onClick={() => handleRowClick(item.id)} className={`cursor-pointer border-b ${selectedScheduleId === item.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-800">
-                                            <div>{getDayOfWeek(item.date)}</div>
-                                            <div>{new Date(item.date).toLocaleDateString('vi-VN', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{item.startTime} - {item.endTime}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">{item.topic}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">{item.type}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{teacherMap[item.teacherId] || 'N/A'}</td>
+                                [...weeklyPlans].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(item => (
+                                    <tr key={item.id} onClick={() => handlePlanRowClick(item.id)} className={`cursor-pointer border-b ${selectedPlanId === item.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
+                                        <td className="px-4 py-3 font-medium"><div className="text-sm text-gray-800">{getDayOfWeek(item.date)}</div><div className="text-xs text-gray-500">{new Date(item.date).toLocaleDateString('vi-VN', { timeZone: 'UTC' })}</div></td>
+                                        <td className="px-4 py-3 text-sm">{item.timeRange}</td>
+                                        <td className="px-4 py-3 text-sm">{item.content}</td>
+                                        <td className="px-4 py-3 text-sm">{item.type}</td>
+                                        <td className="px-4 py-3 text-sm">{item.instructor}</td>
                                     </tr>
                                 ))
                             )}
@@ -244,12 +193,41 @@ const OverviewScreen: React.FC = () => {
                     </table>
                 </div>
                 <div className="flex items-center flex-wrap gap-2 pt-4 mt-4 border-t">
-                    <button onClick={handleCreate} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Tạo mới</button>
-                    <button onClick={handleEdit} disabled={!selectedScheduleId} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 disabled:bg-gray-400">Chỉnh sửa</button>
-                    <button onClick={handleCancel} disabled={!selectedScheduleId} className="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 disabled:bg-gray-400">Huỷ</button>
-                    <button onClick={handleImportClick} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700">Nhập từ Excel</button>
+                    <button onClick={handleCreatePlan} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Tạo mới</button>
+                    <button onClick={handleEditPlan} disabled={!selectedPlanId} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg disabled:bg-gray-400">Chỉnh sửa</button>
+                    <button onClick={handleDeletePlan} disabled={!selectedPlanId} className="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg disabled:bg-gray-400">Xóa</button>
+                    <button onClick={handleImportClick} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">Nhập từ Excel</button>
                 </div>
             </div>
+
+            {/* Implemented/Actual Schedule Section */}
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <h3 className="font-bold text-lg text-gray-800 mb-4">Triển khai lịch đào tạo tuần (Thực tế)</h3>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full border-t border-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>{['Thứ/Ngày', 'Thời gian', 'Chủ đề', 'Khóa học', 'Loại', 'Giáo viên'].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b">{h}</th>)}</tr>
+                        </thead>
+                        <tbody className="bg-white">
+                            {sessions.length === 0 ? (
+                                <tr><td colSpan={6} className="text-center py-16 text-gray-500">Chưa có buổi học nào được triển khai.</td></tr>
+                            ) : (
+                                [...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(item => (
+                                    <tr key={item.id} className="border-b">
+                                        <td className="px-4 py-3 font-medium"><div className="text-sm text-gray-800">{getDayOfWeek(item.date)}</div><div className="text-xs text-gray-500">{new Date(item.date).toLocaleDateString('vi-VN', { timeZone: 'UTC' })}</div></td>
+                                        <td className="px-4 py-3 text-sm">{item.startTime} - {item.endTime}</td>
+                                        <td className="px-4 py-3 text-sm">{item.topic}</td>
+                                        <td className="px-4 py-3 text-sm">{courseMap[item.courseId] || 'N/A'}</td>
+                                        <td className="px-4 py-3 text-sm">{item.type}</td>
+                                        <td className="px-4 py-3 text-sm">{teacherMap[item.teacherId] || 'N/A'}</td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     );
 };

@@ -39,6 +39,7 @@ export enum SessionType {
     PRACTICE = 'Thực hành',
 }
 
+// This represents the ACTUAL implemented sessions from the "Course" screen
 export interface Session {
     id: string;
     date: string;
@@ -49,6 +50,16 @@ export interface Session {
     studentIds: string[];
     topic: string;
     type: SessionType;
+}
+
+// This represents the PLANNED weekly schedule from the "Overview" screen
+export interface WeeklyPlan {
+    id: string;
+    date: string;
+    timeRange: string; // e.g., "08:00 - 12:00"
+    content: string;
+    type: string; // e.g., "Lý thuyết"
+    instructor: string;
 }
 
 export interface Course {
@@ -62,10 +73,10 @@ export interface Course {
 export interface Student {
     id: string;
     name: string;
-    birthDate: string; 
+    birthDate: string;
     phone: string;
     group: string;
-    courseId: string; 
+    courseId: string;
 }
 
 export enum CostReportType {
@@ -81,23 +92,24 @@ export interface AppContextType {
     courses: Course[];
     teachers: Teacher[];
     students: Student[];
-    sessions: Session[];
+    sessions: Session[]; // Actual implemented sessions
     users: User[];
+    weeklyPlans: WeeklyPlan[]; // Planned sessions
     addCourse: (course: Omit<Course, 'id'>) => Promise<void>;
     updateCourse: (course: Course) => Promise<void>;
     deleteCourse: (courseId: string) => Promise<void>;
-    addTeacher: (teacher: Omit<User, 'id' | 'role'>) => Promise<void>;
-    updateTeacher: (teacher: User) => Promise<void>;
-    deleteTeacher: (teacherId: string) => Promise<void>;
     addStudent: (student: Omit<Student, 'id'>) => Promise<void>;
     updateStudent: (student: Student) => Promise<void>;
     deleteStudent: (studentId: string) => Promise<void>;
     addSession: (session: Omit<Session, 'id'>) => Promise<void>;
     updateSession: (session: Session) => Promise<void>;
     deleteSession: (sessionId: string) => Promise<void>;
-    addUser: (user: Omit<User, 'id'>) => Promise<void>;
+    addUser: (user: Omit<User, 'id'>) => Promise<{success: boolean, message: string}>;
     updateUser: (user: User) => Promise<void>;
     deleteUser: (userId: string) => Promise<void>;
+    addWeeklyPlan: (plan: Omit<WeeklyPlan, 'id'>) => Promise<void>;
+    updateWeeklyPlan: (plan: WeeklyPlan) => Promise<void>;
+    deleteWeeklyPlan: (planId: string) => Promise<void>;
 }
 
 export enum Screen {

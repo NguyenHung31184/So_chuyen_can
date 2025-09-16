@@ -1,7 +1,54 @@
 import React, { useState, useContext, useMemo } from 'react';
-import { AppContext } from '../contexts/AppContext';
+import { AppContext, AppContextType } from '../contexts/AppContext';
 import NewSessionModal from '../components/NewSessionModal';
-import { Session } from '../types';
+import { Session, UserRole } from '../types';
+
+// --- HÀM HỖ TRỢ ĐÃ SỬA LỖI: Chuyển đổi an toàn từ mọi định dạng sang Date ---
+const toDate = (value: any): Date | null => {
+    if (!value) return null;
+
+    // 1. Nếu là đối tượng Timestamp của Firestore (ưu tiên cao nhất)
+    if (typeof value.toDate === 'function') {
+        return value.toDate();
+    }
+
+    // 2. Nếu là chuỗi ký tự
+    if (typeof value === 'string') {
+        let date: Date | null = null;
+
+        // 2a. Thử phân tích định dạng "dd/mm/yyyy"
+        const partsSlash = value.split('/');
+        if (partsSlash.length === 3) {
+            const [day, month, year] = partsSlash.map(Number);
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                // Month trong new Date() là 0-indexed (0-11)
+                date = new Date(year, month - 1, day);
+            }
+        }
+
+        // 2b. Nếu định dạng trên thất bại, thử phân tích các định dạng chuẩn (ví dụ: "yyyy-mm-dd")
+        if (!date || isNaN(date.getTime())) {
+            date = new Date(value);
+        }
+
+        // Trả về nếu ngày hợp lệ
+        if (date && !isNaN(date.getTime())) {
+            return date;
+        }
+    }
+
+    // 3. Nếu là số (milliseconds since epoch)
+    if (typeof value === 'number') {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+    }
+
+    // Trả về null nếu không thể phân tích được
+    return null;
+};
+
 
 const InfoCard: React.FC<{ title: string; value: number | string; color: string }> = ({ title, value, color }) => (
     <div className={`p-4 rounded-lg shadow-sm text-center ${color}`}>
@@ -21,65 +68,60 @@ const CourseScreen: React.FC = () => {
         return <div className="p-6">Loading...</div>;
     }
 
-    const { courses, teachers, students, sessions, addSession } = context;
+    const { courses, users, students, sessions, addSession } = context as AppContextType;
 
     const handleAddSession = (session: Omit<Session, 'id'>) => {
         addSession(session);
         setIsModalOpen(false);
     };
+    
+    const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
 
-    const monthlyCourses = useMemo(() => {
+    const activeCoursesInMonth = useMemo(() => {
         if (!courses) return [];
+        
+        const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
+        const endOfMonth = new Date(selectedYear, selectedMonth, 0);
+        
         return courses.filter(course => {
-            const startDate = new Date(course.startDate);
-            const endDate = new Date(course.endDate);
-            // A course is "active" if its time range intersects with the selected month/year.
-            const courseStart = new Date(startDate.getFullYear(), startDate.getMonth());
-            const courseEnd = new Date(endDate.getFullYear(), endDate.getMonth());
-            const selectedDate = new Date(selectedYear, selectedMonth - 1);
-            return courseStart <= selectedDate && selectedDate <= courseEnd;
+            const courseStart = toDate(course.startDate);
+            const courseEnd = toDate(course.endDate);
+
+            if (!courseStart || !courseEnd) return false;
+
+            return courseStart <= endOfMonth && courseEnd >= startOfMonth;
         });
     }, [courses, selectedMonth, selectedYear]);
 
     const monthlyStats = useMemo(() => {
-        if (!monthlyCourses.length) {
-             const totalSessionsInMonth = sessions.filter(session => {
-                const sessionDate = new Date(session.date);
-                return sessionDate.getMonth() + 1 === selectedMonth && sessionDate.getFullYear() === selectedYear;
-            }).length;
-            return {
-                totalCoursesInMonth: 0,
-                totalTeachersInMonth: 0,
-                totalStudentsInMonth: 0,
-                totalSessionsInMonth
-            };
-        }
-        const activeCourseIds = monthlyCourses.map(c => c.id);
+        const activeCourseIds = new Set(activeCoursesInMonth.map(c => c.id));
 
-        const activeStudents = students.filter(s => s.courseId && activeCourseIds.includes(s.courseId));
-        const totalStudentsInMonth = new Set(activeStudents.map(s => s.id)).size;
+        const activeSessionsInMonth = (sessions || []).filter(session => {
+            const sessionDate = toDate(session.date);
+            if (!sessionDate) return false;
+
+            return sessionDate.getFullYear() === selectedYear &&
+                   sessionDate.getMonth() + 1 === selectedMonth &&
+                   activeCourseIds.has(session.courseId);
+        });
+
+        const totalStudentsInMonth = (students || []).filter(s => s.courseId && activeCourseIds.has(s.courseId)).length;
 
         const activeTeacherIds = new Set<string>();
-        sessions.forEach(session => {
-            if(activeCourseIds.includes(session.courseId)) {
-                const teacher = teachers.find(t => t.id === session.teacherId);
-                if (teacher) activeTeacherIds.add(teacher.id);
+        (teachers || []).forEach(teacher => {
+            const isAssignedToActiveClass = (teacher.courseIds || []).some(courseId => activeCourseIds.has(courseId));
+            if (isAssignedToActiveClass) {
+                activeTeacherIds.add(teacher.id);
             }
         });
-        const totalTeachersInMonth = activeTeacherIds.size;
-
-        const totalSessionsInMonth = sessions.filter(session => {
-            const sessionDate = new Date(session.date);
-            return sessionDate.getMonth() + 1 === selectedMonth && sessionDate.getFullYear() === selectedYear;
-        }).length;
 
         return {
-            totalCoursesInMonth: monthlyCourses.length,
-            totalTeachersInMonth,
+            totalCoursesInMonth: activeCoursesInMonth.length,
+            totalTeachersInMonth: activeTeacherIds.size,
             totalStudentsInMonth,
-            totalSessionsInMonth
+            totalSessionsInMonth: activeSessionsInMonth.length
         };
-    }, [monthlyCourses, students, teachers, sessions, selectedMonth, selectedYear]);
+    }, [activeCoursesInMonth, students, teachers, sessions, selectedMonth, selectedYear]);
 
     const yearOptions = Array.from({ length: 11 }, (_, i) => currentYear - 5 + i);
 
@@ -148,17 +190,19 @@ const CourseScreen: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {monthlyCourses.length > 0 ? (
-                                monthlyCourses.map((course, index) => {
-                                    const courseStudentsCount = students.filter(s => s.courseId === course.id).length;
-                                    const mainTeacher = teachers.find(t => t.courseIds?.includes(course.id));
+                            {activeCoursesInMonth.length > 0 ? (
+                                activeCoursesInMonth.map((course, index) => {
+                                    const courseStudentsCount = (students || []).filter(s => s.courseId === course.id).length;
+                                    const mainTeacher = (teachers || []).find(t => t.courseIds?.includes(course.id));
+                                    const startDate = toDate(course.startDate);
+                                    const endDate = toDate(course.endDate);
 
                                     return (
                                         <tr key={course.id} className="border-b hover:bg-gray-50">
                                             <td className="p-3">{index + 1}</td>
-                                            <td className="p-3 font-medium text-gray-800">{course.name}</td>
-                                            <td className="p-3">{new Date(course.startDate).toLocaleDateString('vi-VN')}</td>
-                                            <td className="p-3">{new Date(course.endDate).toLocaleDateString('vi-VN')}</td>
+                                            <td className="p-3 font-medium text-gray-800">{course.name} - Khóa {course.courseNumber}</td>
+                                            <td className="p-3">{startDate ? startDate.toLocaleDateString('vi-VN') : 'N/A'}</td>
+                                            <td className="p-3">{endDate ? endDate.toLocaleDateString('vi-VN') : 'N/A'}</td>
                                             <td className="p-3 text-center">{courseStudentsCount}</td>
                                             <td className="p-3">{mainTeacher ? mainTeacher.name : 'Chưa có'}</td>
                                         </tr>
