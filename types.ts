@@ -23,7 +23,7 @@ export interface User {
     name: string;
     phone: string;
     role: UserRole;
-    email: string;
+    email?: string;
     mustChangePassword?: boolean;
     // Optional teacher fields - will only exist if role is Teacher
     contractType?: TeacherContractType;

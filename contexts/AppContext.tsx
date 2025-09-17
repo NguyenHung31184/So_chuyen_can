@@ -2,7 +2,7 @@
 import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { db } from '../firebaseConfig';
+import { db } from '../firebase';
 import { User, Course, Student, Session, AppContextType } from '../types';
 
 export const AppContext = createContext<AppContextType | null>(null);
