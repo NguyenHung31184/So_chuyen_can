@@ -91,7 +91,6 @@ export enum CostReportType {
 export interface AppContextType {
     currentUser: User | null;
     courses: Course[];
-    teachers: Teacher[];
     students: Student[];
     sessions: Session[]; // Actual implemented sessions
     users: User[];

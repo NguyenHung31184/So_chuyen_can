@@ -1,8 +1,7 @@
 
 import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { AppContext } from '../contexts/AppContext';
-import { Session, SessionType, TeacherSpecialty, Student } from '../types';
-// REMOVED: import { courseModules } from '../courseModules';
+import { Session, SessionType, TeacherSpecialty, Student, UserRole } from '../types';
 
 interface NewSessionModalProps {
   onClose: () => void;
@@ -32,20 +31,22 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
 
   if (!context) return null;
 
-  const { courses, teachers, students } = context;
+  const { courses, users, students } = context;
+  const teachers = useMemo(() => users.filter(u => u.role === UserRole.TEACHER), [users]);
 
-  // Effect to reset attendance when course changes
+  // Effect to reset teacher and attendance when course or session type changes
   useEffect(() => {
     setPresentStudentIds([]);
-  }, [selectedCourseId]);
+    setTeacherId(''); // Reset selected teacher
+  }, [selectedCourseId, sessionType]);
 
-  // Memoized list of available teachers
+  // Memoized list of available teachers - FIXED LOGIC
   const availableTeachers = useMemo(() => {
     if (!selectedCourseId) return [];
-    // This logic might need adjustment based on final data structure for teachers
-    const specialty = sessionType === SessionType.THEORY ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
-    return teachers.filter(t => t.specialty === specialty && t.courseIds?.includes(selectedCourseId));
-  }, [selectedCourseId, sessionType, teachers]);
+    // FIX: Only filter by course assignment. Remove the specialty filter.
+    // Any teacher assigned to the course should be selectable.
+    return teachers.filter(t => t.courseIds?.includes(selectedCourseId));
+  }, [selectedCourseId, teachers]);
   
   // Memoized list of students for the selected course
   const courseStudents = useMemo(() => {
@@ -65,7 +66,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
     e.preventDefault();
 
     if (!selectedCourseId || !teacherId || !topic) {
-        alert('Vui lòng điền đầy đủ thông tin.');
+        alert('Vui lòng điền đầy đủ thông tin: Khóa học, Giảng viên và Nội dung giảng dạy.');
         return;
     }
 
@@ -77,8 +78,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
         teacherId,
         courseId: selectedCourseId,
         topic,
-        studentIds: presentStudentIds, // Save the list of present students
-        classId: '' // Add a default or derived classId if needed
+        studentIds: presentStudentIds,
+        classId: '' // Default value
     };
     
     onSave(newSession);
@@ -128,7 +129,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
             <div>
                 <label htmlFor="teacher" className="block text-sm font-medium text-gray-700">Giảng viên phụ trách</label>
                 <select id="teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="mt-1 w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId}>
-                    <option value="">Chọn giảng viên</option>
+                    <option value="">{availableTeachers.length > 0 ? 'Chọn giảng viên' : 'Không có giảng viên cho khóa học này'}</option>
                     {availableTeachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
                 </select>
             </div>
@@ -146,7 +147,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
                 />
             </div>
 
-            {/* === Student Attendance Section === */}
             {courseStudents.length > 0 && (
                 <div className="border-t pt-4">
                     <h4 className="text-md font-medium text-gray-800 mb-2">Điểm danh học viên</h4>

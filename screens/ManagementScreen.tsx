@@ -20,28 +20,22 @@ const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCa
 // --- COMPONENT: Màn hình quản lý --- //
 const ManagementScreen: React.FC = () => {
     const context = useContext(AppContext);
-    // NEW: Refs for file inputs
     const studentFileInputRef = useRef<HTMLInputElement>(null);
     const teacherFileInputRef = useRef<HTMLInputElement>(null);
-
 
     const initialCourseForm: Omit<Course, 'id'> = { name: '', courseNumber: 0, startDate: '', endDate: '' };
     const initialStudentForm: Omit<Student, 'id'> = { name: '', birthDate: '', phone: '', group: '', courseId: '' };
     const initialTeacherForm: Partial<User> & { password?: string } = { name: '', phone: '', role: UserRole.TEACHER, contractType: TeacherContractType.CONTRACT, specialty: TeacherSpecialty.THEORY, courseIds: [], password: '' };
     const initialUserForm: Omit<User, 'id'> & { password?: string } = { name: '', phone: '', role: UserRole.MANAGER, password: '' };
 
-    // --- STATE: Biểu mẫu --- //
+    // --- STATE ---
     const [courseForm, setCourseForm] = useState(initialCourseForm);
     const [studentForm, setStudentForm] = useState(initialStudentForm);
     const [teacherForm, setTeacherForm] = useState(initialTeacherForm);
     const [userForm, setUserForm] = useState(initialUserForm);
-
-    // --- STATE: Chỉnh sửa --- //
     const [editingCourse, setEditingCourse] = useState<Course | null>(null);
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
     const [editingUser, setEditingUser] = useState<User | null>(null); 
-
-    // --- STATE: Khác --- //
     const [studentCourseFilter, setStudentCourseFilter] = useState<string>('all');
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'course' | 'student' | 'user'; id: string; } | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +45,7 @@ const ManagementScreen: React.FC = () => {
     }
     const { courses, students, users, addCourse, updateCourse, deleteCourse, addStudent, updateStudent, deleteStudent, addUser, updateUser, deleteUser } = context as AppContextType;
     
-    // --- DỮ LIỆU ĐƯỢC GHI NHỚ --- //
+    // --- MEMOIZED DATA ---
     const teachers = useMemo(() => (users || []).filter(u => u?.role === UserRole.TEACHER), [users]);
     const managementUsers = useMemo(() => (users || []).filter(u => u && (u.role === UserRole.ADMIN || u.role === UserRole.MANAGER || u.role === UserRole.GROUP_LEADER)), [users]);
     const filteredStudents = useMemo(() => {
@@ -60,14 +54,14 @@ const ManagementScreen: React.FC = () => {
         return students.filter(s => s?.courseId === studentCourseFilter);
     }, [students, studentCourseFilter]);
 
-    // --- XỬ LÝ CHỈNH SỬA & HỦY --- //
+    // --- EDIT & CANCEL HANDLERS ---
     const handleEdit = (type: 'course' | 'student' | 'user', item: any) => {
         if (!item) return;
         if (type === 'course') { setEditingCourse(item); setCourseForm(item); }
         if (type === 'student') { setEditingStudent(item); setStudentForm(item); }
         if (type === 'user') {
             setEditingUser(item);
-            const { password, ...formData } = item; // Loại bỏ mật khẩu khi vào chế độ sửa
+            const { password, ...formData } = item;
             if(item.role === UserRole.TEACHER) {
                 setTeacherForm(formData)
             } else {
@@ -86,209 +80,198 @@ const ManagementScreen: React.FC = () => {
         }
     };
     
-    // --- LOGIC GỬI BIỂU MẪU (HỢP NHẤT) --- //
+    // --- FORM SUBMISSION ---
     const handleSubmit = async (e: React.FormEvent, type: 'course' | 'student' | 'user', subType?: 'teacher' | 'manager') => {
         e.preventDefault();
         setIsSubmitting(true);
-
-        const isPhoneInUse = (phone: string, currentId?: string) => 
-            (users || []).some(user => user?.phone === phone && user.id !== currentId);
+        const isPhoneInUse = (phone: string, currentId?: string) => (users || []).some(user => user?.phone === phone && user.id !== currentId);
 
         try {
-            let result: { success: boolean; message: string } | undefined;
-            switch (type) {
-                case 'user':
-                    const form = subType === 'teacher' ? teacherForm : userForm;
-                    if (isPhoneInUse(form.phone!, editingUser?.id)) {
-                        alert('LỖI: Số điện thoại này đã được một tài khoản khác sử dụng.');
-                        setIsSubmitting(false);
-                        return;
-                    }
-
-                    if (editingUser) {
-                        await updateUser({ ...editingUser, ...form });
-                    } else {
-                        if (!form.password || form.password.length < 6) {
-                            alert('Mật khẩu là bắt buộc và phải có ít nhất 6 ký tự.');
-                            setIsSubmitting(false);
-                            return;
-                        }
-                        result = await addUser(form as Omit<User, 'id'> & { password?: string });
-                    }
-                    break;
-
-                case 'student':
-                     if (!studentForm.courseId) {
-                        alert('Vui lòng chọn một khóa đào tạo.');
-                        setIsSubmitting(false);
-                        return;
-                    }
-                    if (editingStudent) {
-                        await updateStudent({ ...editingStudent, ...studentForm });
-                    } else {
-                        await addStudent(studentForm);
-                    }
-                    break;
-
-                case 'course':
-                    if (editingCourse) {
-                        await updateCourse({ ...editingCourse, ...courseForm });
-                    } else {
-                        await addCourse(courseForm);
-                    }
-                    break;
+            if (type === 'user') {
+                const form = subType === 'teacher' ? teacherForm : userForm;
+                if (isPhoneInUse(form.phone!, editingUser?.id)) {
+                    throw new Error('Số điện thoại này đã được một tài khoản khác sử dụng.');
+                }
+                if (editingUser) {
+                    await updateUser({ ...editingUser, ...form });
+                } else {
+                    if (!form.password || form.password.length < 6) throw new Error('Mật khẩu là bắt buộc và phải có ít nhất 6 ký tự.');
+                    await addUser(form as Omit<User, 'id'> & { password?: string });
+                }
+            } else if (type === 'student') {
+                if (!studentForm.courseId) throw new Error('Vui lòng chọn một khóa đào tạo.');
+                if (editingStudent) await updateStudent({ ...editingStudent, ...studentForm });
+                else await addStudent(studentForm);
+            } else if (type === 'course') {
+                if (editingCourse) await updateCourse({ ...editingCourse, ...courseForm });
+                else await addCourse(courseForm);
             }
-
-            alert(result?.message || 'Thao tác thành công!');
+            alert('Thao tác thành công!');
             handleCancelEdit(type);
-
         } catch (error: any) {
-            console.error(`Lỗi khi đang ${editingUser || editingStudent || editingCourse ? 'cập nhật' : 'thêm'} ${type}:`, error);
-            alert(error.message || `Đã xảy ra lỗi khi lưu dữ liệu. Vui lòng thử lại.`);
+            alert(`LỖI: ${error.message}`);
         } finally {
             setIsSubmitting(false);
         }
     };
     
-    // --- LOGIC XÓA (HỢP NHẤT) --- //
-    const handleDeleteRequest = (type: 'course' | 'student' | 'user', id: string) => {
-        setConfirmDelete({ type, id });
-    };
+    // --- DELETE LOGIC ---
+    const handleDeleteRequest = (type: 'course' | 'student' | 'user', id: string) => setConfirmDelete({ type, id });
 
     const confirmDeletion = async () => {
         if (!confirmDelete) return;
         const { type, id } = confirmDelete;
         try {
-            switch (type) {
-                case 'course': await deleteCourse(id); break;
-                case 'student': await deleteStudent(id); break;
-                case 'user': await deleteUser(id); break;
-            }
+            if (type === 'course') await deleteCourse(id);
+            else if (type === 'student') await deleteStudent(id);
+            else if (type === 'user') await deleteUser(id);
         } catch (error: any) {
-            console.error(`Lỗi khi đang xóa ${type}:`, error);
-            alert(error.message || "Đã xảy ra lỗi khi xóa. Vui lòng thử lại.");
+            alert(`Lỗi khi xóa: ${error.message}`);
         }
         setConfirmDelete(null);
     };
 
+    // --- HELPER FUNCTIONS ---
     const getCourseDisplayString = (courseId: string) => {
         const course = (courses || []).find(c => c?.id === courseId);
         return course ? `${course.name} - Khóa ${course.courseNumber}` : 'N/A';
     };
 
-     // NEW: Logic for Excel Import
+    const handleTeacherCourseChange = (courseId: string, isChecked: boolean) => {
+        const currentCourseIds = teacherForm.courseIds ?? [];
+        const newCourseIds = isChecked ? [...currentCourseIds, courseId] : currentCourseIds.filter(id => id !== courseId);
+        setTeacherForm({ ...teacherForm, courseIds: newCourseIds });
+    };
+
+    // --- REFACTORED EXCEL IMPORT LOGIC ---
     const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>, type: 'student' | 'teacher') => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onload = async (event) => {
-            const data = new Uint8Array(event.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            
-            // Remove header row
-            const rows = json.slice(1);
-            let errors: string[] = [];
-            let validData: any[] = [];
-
-            if (type === 'student') {
-                const requiredHeaders = ["Họ và tên", "Ngày sinh", "Số điện thoại", "Nhóm", "Tên khóa học"];
-                const headerRow = json[0] as string[];
-                if(!requiredHeaders.every(h => headerRow.includes(h))) {
-                    alert(`Lỗi: File Excel cho học viên phải chứa các cột: ${requiredHeaders.join(', ')}`);
-                    return;
-                }
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 
-                rows.forEach((row: any, index) => {
-                    const student = {
-                        name: row[0],
-                        birthDate: row[1],
-                        phone: String(row[2]),
-                        group: row[3],
-                        courseName: row[4]
+                if (json.length < 2) throw new Error("File Excel trống hoặc không có dữ liệu.");
+
+                const headerRow = (json[0] as any[]).map(h => String(h).trim());
+                const rows = json.slice(1);
+                let errors: string[] = [];
+                let validData: any[] = [];
+
+                if (type === 'student') {
+                    const requiredHeaders = ["Ho va ten", "Ngay sinh", "So dien thoai", "Nhom", "Ten khoa hoc"];
+                    const missingHeaders = requiredHeaders.filter(h => !headerRow.includes(h));
+                    if (missingHeaders.length > 0) throw new Error(`File Excel thiếu các cột bắt buộc: ${missingHeaders.join(', ')}`);
+
+                    const colMap = {
+                        name: headerRow.indexOf("Ho va ten"),
+                        birthDate: headerRow.indexOf("Ngay sinh"),
+                        phone: headerRow.indexOf("So dien thoai"),
+                        group: headerRow.indexOf("Nhom"),
+                        courseName: headerRow.indexOf("Ten khoa hoc"),
                     };
-                    if (!student.name || !student.birthDate || !student.phone || !student.group || !student.courseName) {
-                        errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`);
-                        return;
-                    }
-                    const course = courses.find(c => `${c.name} - Khóa ${c.courseNumber}` === student.courseName.trim());
-                    if (!course) {
-                        errors.push(`Dòng ${index + 2}: Tên khóa học "${student.courseName}" không tồn tại hoặc không chính xác.`);
-                        return;
-                    }
-                    validData.push({ ...student, courseId: course.id });
-                });
-            } else { // teacher
-                const requiredHeaders = ["Họ và tên", "Số điện thoại", "Mật khẩu", "Hình thức", "Chuyên môn"];
-                 const headerRow = json[0] as string[];
-                if(!requiredHeaders.every(h => headerRow.includes(h))) {
-                    alert(`Lỗi: File Excel cho giáo viên phải chứa các cột: ${requiredHeaders.join(', ')}`);
-                    return;
+
+                    rows.forEach((row: any, index) => {
+                        const name = String(row[colMap.name]).trim();
+                        if (!name) return; // Skip empty rows
+
+                        const student = {
+                            name,
+                            birthDate: String(row[colMap.birthDate]).trim(),
+                            phone: String(row[colMap.phone]).trim(),
+                            group: String(row[colMap.group]).trim(),
+                            courseName: String(row[colMap.courseName]).trim(),
+                        };
+
+                        if (!student.name || !student.birthDate || !student.phone || !student.group || !student.courseName) {
+                            errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`);
+                            return;
+                        }
+                        const course = courses.find(c => `${c.name} - Khóa ${c.courseNumber}`.trim() === student.courseName);
+                        if (!course) {
+                            errors.push(`Dòng ${index + 2}: Tên khóa học "${student.courseName}" không tồn tại.`);
+                            return;
+                        }
+                        validData.push({ ...student, courseId: course.id });
+                    });
+
+                } else { // teacher
+                    const requiredHeaders = ["Ho va ten", "So dien thoai", "Mat khau", "Hinh thuc", "Chuyen mon"];
+                    const missingHeaders = requiredHeaders.filter(h => !headerRow.includes(h));
+                    if (missingHeaders.length > 0) throw new Error(`File Excel thiếu các cột bắt buộc: ${missingHeaders.join(', ')}`);
+                    
+                    const colMap = {
+                        name: headerRow.indexOf("Ho va ten"),
+                        phone: headerRow.indexOf("So dien thoai"),
+                        password: headerRow.indexOf("Mat khau"),
+                        contractType: headerRow.indexOf("Hinh thuc"),
+                        specialty: headerRow.indexOf("Chuyen mon"),
+                    };
+                    
+                    const phonesInFile = new Set();
+                    rows.forEach((row: any, index) => {
+                        const name = String(row[colMap.name]).trim();
+                        if(!name) return; // Skip empty rows
+                        
+                        const teacher = {
+                            name,
+                            phone: String(row[colMap.phone]).trim(),
+                            password: String(row[colMap.password]).trim(),
+                            contractType: String(row[colMap.contractType]).trim(),
+                            specialty: String(row[colMap.specialty]).trim(),
+                            role: UserRole.TEACHER
+                        };
+
+                        if (!teacher.name || !teacher.phone || !teacher.password || !teacher.contractType || !teacher.specialty) {
+                             errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`); return;
+                        }
+                        if (!Object.values(TeacherContractType).map(v=>v.trim()).includes(teacher.contractType)) {
+                             errors.push(`Dòng ${index + 2}: Hình thức "${teacher.contractType}" không hợp lệ.`);
+                        }
+                        if (!Object.values(TeacherSpecialty).map(v=>v.trim()).includes(teacher.specialty)) {
+                             errors.push(`Dòng ${index + 2}: Chuyên môn "${teacher.specialty}" không hợp lệ.`);
+                        }
+                        if(phonesInFile.has(teacher.phone)) {
+                             errors.push(`Dòng ${index + 2}: Số điện thoại "${teacher.phone}" bị trùng lặp trong file.`);
+                        } else {
+                            phonesInFile.add(teacher.phone);
+                        }
+                    
+                        if (errors.length === 0) validData.push(teacher);
+                    });
                 }
 
-                rows.forEach((row: any, index) => {
-                    const teacher = {
-                        name: row[0],
-                        phone: String(row[1]),
-                        password: String(row[2]),
-                        contractType: row[3],
-                        specialty: row[4],
-                        role: UserRole.TEACHER
-                    };
-                    if (!teacher.name || !teacher.phone || !teacher.password || !teacher.contractType || !teacher.specialty) {
-                        errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`);
-                        return;
-                    }
-                    if (!Object.values(TeacherContractType).includes(teacher.contractType as TeacherContractType)) {
-                         errors.push(`Dòng ${index + 2}: Hình thức "${teacher.contractType}" không hợp lệ.`);
-                    }
-                     if (!Object.values(TeacherSpecialty).includes(teacher.specialty as TeacherSpecialty)) {
-                         errors.push(`Dòng ${index + 2}: Chuyên môn "${teacher.specialty}" không hợp lệ.`);
-                    }
-                    if (errors.length === 0) {
-                        validData.push(teacher);
-                    }
-                });
-            }
-
-            if (errors.length > 0) {
-                alert(`Phát hiện lỗi trong file Excel:\n\n${errors.join('\n')}\n\nVui lòng sửa và thử lại.`);
-            } else if (validData.length > 0) {
-                const confirmation = window.confirm(`Bạn có chắc chắn muốn nhập ${validData.length} ${type === 'student' ? 'học viên' : 'giáo viên'} từ file Excel không?`);
-                if (confirmation) {
-                    setIsSubmitting(true);
-                    try {
+                if (errors.length > 0) {
+                    throw new Error(`Phát hiện ${errors.length} lỗi trong file Excel:\n\n- ${errors.join('\n- ')}`);
+                } 
+                if (validData.length > 0) {
+                    const confirmation = window.confirm(`Bạn có chắc chắn muốn nhập ${validData.length} ${type === 'student' ? 'học viên' : 'giáo viên'} từ file Excel không?`);
+                    if (confirmation) {
+                        setIsSubmitting(true);
                         for (const item of validData) {
                             if (type === 'student') await addStudent(item);
                             else await addUser(item);
                         }
                         alert('Nhập dữ liệu từ Excel thành công!');
-                    } catch (err: any) {
-                        alert(`Đã xảy ra lỗi trong quá trình nhập: ${err.message}`);
-                    } finally {
-                        setIsSubmitting(false);
                     }
+                } else {
+                    alert("Không tìm thấy dữ liệu hợp lệ trong file Excel.");
                 }
-            } else {
-                 alert("Không tìm thấy dữ liệu hợp lệ trong file Excel.");
+
+            } catch (err: any) {
+                alert(`Lỗi xử lý file: ${err.message}`);
+            } finally {
+                setIsSubmitting(false);
             }
         };
         reader.readAsArrayBuffer(file);
-
-        // Reset file input value to allow re-uploading the same file
-        e.target.value = '';
-    };
-
-    
-    const handleTeacherCourseChange = (courseId: string, isChecked: boolean) => {
-        const currentCourseIds = teacherForm.courseIds ?? [];
-        const newCourseIds = isChecked
-            ? [...currentCourseIds, courseId]
-            : currentCourseIds.filter(id => id !== courseId);
-        setTeacherForm({ ...teacherForm, courseIds: newCourseIds });
+        e.target.value = ''; // Reset file input
     };
 
     return (
@@ -324,9 +307,8 @@ const ManagementScreen: React.FC = () => {
                 </form>
             </div>
 
-             {/* Students Section */}
+            {/* Students Section */}
             <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                {/* NEW: Title and Import button */}
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-bold">Danh sách học viên</h3>
                     <input
@@ -334,7 +316,7 @@ const ManagementScreen: React.FC = () => {
                         ref={studentFileInputRef}
                         onChange={(e) => handleFileImport(e, 'student')}
                         className="hidden"
-                        accept=".xlsx, .xls"
+                        accept=".xlsx, .xls, .csv"
                     />
                     <button onClick={() => studentFileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>
                         Nhập từ Excel
@@ -379,7 +361,6 @@ const ManagementScreen: React.FC = () => {
 
             {/* Teachers Section */}
             <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                 {/* NEW: Title and Import button */}
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-bold">Danh sách giáo viên</h3>
                     <input
@@ -387,7 +368,7 @@ const ManagementScreen: React.FC = () => {
                         ref={teacherFileInputRef}
                         onChange={(e) => handleFileImport(e, 'teacher')}
                         className="hidden"
-                        accept=".xlsx, .xls"
+                        accept=".xlsx, .xls, .csv"
                     />
                     <button onClick={() => teacherFileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>
                         Nhập từ Excel
