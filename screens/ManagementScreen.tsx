@@ -1,7 +1,8 @@
 
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useRef } from 'react';
 import { AppContext, AppContextType } from '../contexts/AppContext';
 import { Course, Student, User, TeacherSpecialty, TeacherContractType, UserRole } from '../types';
+import * as XLSX from 'xlsx';
 
 // --- COMPONENT: Modal xác nhận --- //
 const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCancel: () => void; }> = ({ message, onConfirm, onCancel }) => (
@@ -19,6 +20,10 @@ const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCa
 // --- COMPONENT: Màn hình quản lý --- //
 const ManagementScreen: React.FC = () => {
     const context = useContext(AppContext);
+    // NEW: Refs for file inputs
+    const studentFileInputRef = useRef<HTMLInputElement>(null);
+    const teacherFileInputRef = useRef<HTMLInputElement>(null);
+
 
     const initialCourseForm: Omit<Course, 'id'> = { name: '', courseNumber: 0, startDate: '', endDate: '' };
     const initialStudentForm: Omit<Student, 'id'> = { name: '', birthDate: '', phone: '', group: '', courseId: '' };
@@ -45,7 +50,7 @@ const ManagementScreen: React.FC = () => {
         return <div className="p-8 text-center text-red-500">Lỗi nghiêm trọng: Không thể tải được dữ liệu ứng dụng.</div>;
     }
     const { courses, students, users, addCourse, updateCourse, deleteCourse, addStudent, updateStudent, deleteStudent, addUser, updateUser, deleteUser } = context as AppContextType;
-
+    
     // --- DỮ LIỆU ĐƯỢC GHI NHỚ --- //
     const teachers = useMemo(() => (users || []).filter(u => u?.role === UserRole.TEACHER), [users]);
     const managementUsers = useMemo(() => (users || []).filter(u => u && (u.role === UserRole.ADMIN || u.role === UserRole.MANAGER || u.role === UserRole.GROUP_LEADER)), [users]);
@@ -80,7 +85,7 @@ const ManagementScreen: React.FC = () => {
             setTeacherForm(initialTeacherForm);
         }
     };
-
+    
     // --- LOGIC GỬI BIỂU MẪU (HỢP NHẤT) --- //
     const handleSubmit = async (e: React.FormEvent, type: 'course' | 'student' | 'user', subType?: 'teacher' | 'manager') => {
         e.preventDefault();
@@ -168,8 +173,115 @@ const ManagementScreen: React.FC = () => {
 
     const getCourseDisplayString = (courseId: string) => {
         const course = (courses || []).find(c => c?.id === courseId);
-        return course ? `${course.name ?? 'Lỗi tên'} - Khóa ${course.courseNumber ?? '?'}` : 'N/A';
+        return course ? `${course.name} - Khóa ${course.courseNumber}` : 'N/A';
     };
+
+     // NEW: Logic for Excel Import
+    const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>, type: 'student' | 'teacher') => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            // Remove header row
+            const rows = json.slice(1);
+            let errors: string[] = [];
+            let validData: any[] = [];
+
+            if (type === 'student') {
+                const requiredHeaders = ["Họ và tên", "Ngày sinh", "Số điện thoại", "Nhóm", "Tên khóa học"];
+                const headerRow = json[0] as string[];
+                if(!requiredHeaders.every(h => headerRow.includes(h))) {
+                    alert(`Lỗi: File Excel cho học viên phải chứa các cột: ${requiredHeaders.join(', ')}`);
+                    return;
+                }
+                
+                rows.forEach((row: any, index) => {
+                    const student = {
+                        name: row[0],
+                        birthDate: row[1],
+                        phone: String(row[2]),
+                        group: row[3],
+                        courseName: row[4]
+                    };
+                    if (!student.name || !student.birthDate || !student.phone || !student.group || !student.courseName) {
+                        errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`);
+                        return;
+                    }
+                    const course = courses.find(c => `${c.name} - Khóa ${c.courseNumber}` === student.courseName.trim());
+                    if (!course) {
+                        errors.push(`Dòng ${index + 2}: Tên khóa học "${student.courseName}" không tồn tại hoặc không chính xác.`);
+                        return;
+                    }
+                    validData.push({ ...student, courseId: course.id });
+                });
+            } else { // teacher
+                const requiredHeaders = ["Họ và tên", "Số điện thoại", "Mật khẩu", "Hình thức", "Chuyên môn"];
+                 const headerRow = json[0] as string[];
+                if(!requiredHeaders.every(h => headerRow.includes(h))) {
+                    alert(`Lỗi: File Excel cho giáo viên phải chứa các cột: ${requiredHeaders.join(', ')}`);
+                    return;
+                }
+
+                rows.forEach((row: any, index) => {
+                    const teacher = {
+                        name: row[0],
+                        phone: String(row[1]),
+                        password: String(row[2]),
+                        contractType: row[3],
+                        specialty: row[4],
+                        role: UserRole.TEACHER
+                    };
+                    if (!teacher.name || !teacher.phone || !teacher.password || !teacher.contractType || !teacher.specialty) {
+                        errors.push(`Dòng ${index + 2}: Thiếu dữ liệu bắt buộc.`);
+                        return;
+                    }
+                    if (!Object.values(TeacherContractType).includes(teacher.contractType as TeacherContractType)) {
+                         errors.push(`Dòng ${index + 2}: Hình thức "${teacher.contractType}" không hợp lệ.`);
+                    }
+                     if (!Object.values(TeacherSpecialty).includes(teacher.specialty as TeacherSpecialty)) {
+                         errors.push(`Dòng ${index + 2}: Chuyên môn "${teacher.specialty}" không hợp lệ.`);
+                    }
+                    if (errors.length === 0) {
+                        validData.push(teacher);
+                    }
+                });
+            }
+
+            if (errors.length > 0) {
+                alert(`Phát hiện lỗi trong file Excel:\n\n${errors.join('\n')}\n\nVui lòng sửa và thử lại.`);
+            } else if (validData.length > 0) {
+                const confirmation = window.confirm(`Bạn có chắc chắn muốn nhập ${validData.length} ${type === 'student' ? 'học viên' : 'giáo viên'} từ file Excel không?`);
+                if (confirmation) {
+                    setIsSubmitting(true);
+                    try {
+                        for (const item of validData) {
+                            if (type === 'student') await addStudent(item);
+                            else await addUser(item);
+                        }
+                        alert('Nhập dữ liệu từ Excel thành công!');
+                    } catch (err: any) {
+                        alert(`Đã xảy ra lỗi trong quá trình nhập: ${err.message}`);
+                    } finally {
+                        setIsSubmitting(false);
+                    }
+                }
+            } else {
+                 alert("Không tìm thấy dữ liệu hợp lệ trong file Excel.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+
+        // Reset file input value to allow re-uploading the same file
+        e.target.value = '';
+    };
+
     
     const handleTeacherCourseChange = (courseId: string, isChecked: boolean) => {
         const currentCourseIds = teacherForm.courseIds ?? [];
@@ -212,9 +324,22 @@ const ManagementScreen: React.FC = () => {
                 </form>
             </div>
 
-            {/* Students Section */}
+             {/* Students Section */}
             <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                <h3 className="text-xl font-bold mb-4">Danh sách học viên</h3>
+                {/* NEW: Title and Import button */}
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">Danh sách học viên</h3>
+                    <input
+                        type="file"
+                        ref={studentFileInputRef}
+                        onChange={(e) => handleFileImport(e, 'student')}
+                        className="hidden"
+                        accept=".xlsx, .xls"
+                    />
+                    <button onClick={() => studentFileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>
+                        Nhập từ Excel
+                    </button>
+                </div>
                 <div className="mb-4">
                     <select value={studentCourseFilter} onChange={e => setStudentCourseFilter(e.target.value)} className="w-full md:w-1/2 p-2 border rounded-md">
                         <option value="all">Lọc theo khóa đào tạo: Tất cả</option>
@@ -254,7 +379,20 @@ const ManagementScreen: React.FC = () => {
 
             {/* Teachers Section */}
             <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                <h3 className="text-xl font-bold mb-4">Danh sách giáo viên</h3>
+                 {/* NEW: Title and Import button */}
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">Danh sách giáo viên</h3>
+                    <input
+                        type="file"
+                        ref={teacherFileInputRef}
+                        onChange={(e) => handleFileImport(e, 'teacher')}
+                        className="hidden"
+                        accept=".xlsx, .xls"
+                    />
+                    <button onClick={() => teacherFileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>
+                        Nhập từ Excel
+                    </button>
+                </div>
                  <div className="space-y-3 mb-4 max-h-96 overflow-y-auto pr-2">
                     {teachers.map(teacher => (
                         <div key={teacher.id} className="p-3 border rounded-lg bg-gray-50">
