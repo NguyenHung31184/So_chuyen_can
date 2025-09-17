@@ -132,7 +132,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
 
                 <div>
                     <label htmlFor="topic" className="block text-sm font-medium text-gray-700 mb-1">Nội dung giảng dạy</label>
-                    <input id="topic" type="text" value={topic} onChange={(e) => setTopic(e.targe.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId} placeholder="Nhập chủ đề buổi học..."/>
+                    <input id="topic" type="text" value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId} placeholder="Nhập chủ đề buổi học..." />
                 </div>
 
                 {courseStudents.length > 0 && (
