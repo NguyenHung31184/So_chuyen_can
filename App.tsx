@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppContext } from './contexts/AppContext';
-import { User, Course, Student, Session, UserRole, Screen, AppContextType, WeeklyPlan } from './types';
+import { User, Course, Student, Session, UserRole, Screen, AppContextType, WeeklyPlan, Vehicle } from './types';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -36,6 +36,7 @@ const App: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]); 
     const [sessions, setSessions] = useState<Session[]>([]);
     const [weeklyPlans, setWeeklyPlans] = useState<WeeklyPlan[]>([]);
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [dataLoading, setDataLoading] = useState(true);
 
     // --- AUTH & DATA FETCHING ---
@@ -73,7 +74,9 @@ const App: React.FC = () => {
                     return { id: doc.id, ...data, date: (data.date as Timestamp).toDate().toISOString().split('T')[0] } as Session;
                 }))),
             onSnapshot(collection(db, "weekly_plans"), snapshot => 
-                setWeeklyPlans(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyPlan))))
+                setWeeklyPlans(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyPlan)))),
+            onSnapshot(collection(db, "vehicles"), snapshot => 
+                setVehicles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vehicle))))
         ];
 
         setDataLoading(false);
@@ -153,6 +156,7 @@ const App: React.FC = () => {
         users,
         sessions,
         weeklyPlans,
+        vehicles,
         addSession: async (sessionData) => {
              await addDoc(collection(db, "schedules"), { ...sessionData, date: Timestamp.fromDate(new Date(sessionData.date)) });
         },
@@ -173,8 +177,11 @@ const App: React.FC = () => {
         addWeeklyPlan: handleAddDoc("weekly_plans"),
         updateWeeklyPlan: handleUpdateDoc("weekly_plans"),
         deleteWeeklyPlan: handleDeleteDoc("weekly_plans"),
+        addVehicle: handleAddDoc("vehicles"),
+        updateVehicle: handleUpdateDoc("vehicles"),
+        deleteVehicle: handleDeleteDoc("vehicles"),
         teachers: users.filter(u => u.role === UserRole.TEACHER),
-    }), [currentUser, sessions, courses, students, users, weeklyPlans]);
+    }), [currentUser, sessions, courses, students, users, weeklyPlans, vehicles]);
 
     // --- RENDER LOGIC ---
     const availableScreens = useMemo(() => {

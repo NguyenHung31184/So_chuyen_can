@@ -1,4 +1,8 @@
 
+// =======================================================================
+// ENUMS - Định nghĩa các giá trị hằng số để đảm bảo tính nhất quán
+// =======================================================================
+
 export enum UserRole {
     ADMIN = 'Admin',
     MANAGER = 'Manager',
@@ -18,6 +22,56 @@ export enum TeacherContractType {
     CONTRACT = 'Hợp đồng',
 }
 
+export enum SessionType {
+    THEORY = 'Lý thuyết',
+    PRACTICE = 'Thực hành',
+}
+
+export enum Screen {
+    OVERVIEW = 'Tổng quan',
+    COURSE = 'Khoá học',
+    REPORT = 'Báo cáo',
+    ADMIN = 'Quản trị',
+}
+
+// --- NEW: Enums cho cấu trúc chi phí mới ---
+export enum PaymentType {
+    RATE = 'rate',      // Theo định mức
+    PACKAGE = 'package', // Trọn gói
+}
+
+export enum RateUnit {
+    HOUR = 'hour',      // Theo giờ
+    SESSION = 'session', // Theo buổi
+}
+
+export enum FuelType {
+    ELECTRIC = 'Điện',
+    DIESEL = 'Diesel',
+}
+
+
+// =======================================================================
+// INTERFACES - Định nghĩa cấu trúc cho các đối tượng dữ liệu
+// =======================================================================
+
+// --- NEW: Cấu trúc lưu trữ thông tin thù lao của giáo viên ---
+export interface TeacherPayment {
+    type: PaymentType;  // 'rate' hoặc 'package'
+    amount: number;     // Số tiền (VNĐ)
+    rateUnit?: RateUnit; // 'hour' hoặc 'session' (chỉ áp dụng khi type là 'rate')
+}
+
+// --- NEW: Cấu trúc cho phương tiện/thiết bị thực hành ---
+export interface Vehicle {
+    id: string;
+    name: string;
+    fuelType: FuelType;
+    consumptionRate: number; // Định mức tiêu thụ
+    consumptionUnit: string; // Đơn vị của định mức (ví dụ: "kWh/giờ" hoặc "lít/giờ")
+}
+
+
 export interface User {
     id: string;
     name: string;
@@ -25,22 +79,21 @@ export interface User {
     role: UserRole;
     email?: string;
     mustChangePassword?: boolean;
-    // Optional teacher fields - will only exist if role is Teacher
+    
+    // Các trường dành riêng cho giáo viên
     contractType?: TeacherContractType;
     specialty?: TeacherSpecialty;
     courseIds?: string[];
+    
+    // --- UPDATED: Thêm thông tin thù lao cho giáo viên ---
+    theoryPayment?: TeacherPayment;
+    practicePayment?: TeacherPayment;
 }
 
 export interface Teacher extends User {
-    role: UserRole.TEACHER; // Ensures type safety
+    role: UserRole.TEACHER;
 }
 
-export enum SessionType {
-    THEORY = 'Lý thuyết',
-    PRACTICE = 'Thực hành',
-}
-
-// This represents the ACTUAL implemented sessions from the "Course" screen
 export interface Session {
     id: string;
     date: string;
@@ -51,15 +104,17 @@ export interface Session {
     studentIds: string[];
     topic: string;
     type: SessionType;
+
+    // --- UPDATED: Thêm ID của phương tiện đã sử dụng cho buổi thực hành ---
+    vehicleId?: string; 
 }
 
-// This represents the PLANNED weekly schedule from the "Overview" screen
 export interface WeeklyPlan {
     id: string;
     date: string;
-    timeRange: string; // e.g., "08:00 - 12:00"
+    timeRange: string;
     content: string;
-    type: string; // e.g., "Lý thuyết"
+    type: string;
     instructor: string;
 }
 
@@ -80,41 +135,44 @@ export interface Student {
     courseId: string;
 }
 
-export enum CostReportType {
-    TEACHER_THEORY = 'teacher_theory',
-    TEACHER_PRACTICE = 'teacher_practice',
-    FUEL = 'fuel',
-    ELECTRICITY = 'electricity'
-}
 
-// All data management functions are now async and return a Promise
+// =======================================================================
+// APP CONTEXT TYPE - Định nghĩa cấu trúc cho Global State Management
+// =======================================================================
+
 export interface AppContextType {
     currentUser: User | null;
     courses: Course[];
     students: Student[];
-    sessions: Session[]; // Actual implemented sessions
+    sessions: Session[];
     users: User[];
-    weeklyPlans: WeeklyPlan[]; // Planned sessions
+    weeklyPlans: WeeklyPlan[];
+    // --- NEW: Thêm 'vehicles' vào context ---
+    vehicles: Vehicle[];
+
+    // --- Các hàm xử lý dữ liệu (async) ---
     addCourse: (course: Omit<Course, 'id'>) => Promise<void>;
     updateCourse: (course: Course) => Promise<void>;
     deleteCourse: (courseId: string) => Promise<void>;
+    
     addStudent: (student: Omit<Student, 'id'>) => Promise<void>;
     updateStudent: (student: Student) => Promise<void>;
     deleteStudent: (studentId: string) => Promise<void>;
+    
     addSession: (session: Omit<Session, 'id'>) => Promise<void>;
     updateSession: (session: Session) => Promise<void>;
     deleteSession: (sessionId: string) => Promise<void>;
+    
     addUser: (user: Omit<User, 'id'>) => Promise<{success: boolean, message: string}>;
     updateUser: (user: User) => Promise<void>;
     deleteUser: (userId: string) => Promise<void>;
+    
     addWeeklyPlan: (plan: Omit<WeeklyPlan, 'id'>) => Promise<void>;
     updateWeeklyPlan: (plan: WeeklyPlan) => Promise<void>;
     deleteWeeklyPlan: (planId: string) => Promise<void>;
-}
 
-export enum Screen {
-    OVERVIEW = 'Tổng quan',
-    COURSE = 'Khoá học',
-    REPORT = 'Báo cáo',
-    ADMIN = 'Quản trị',
+    // --- NEW: Thêm các hàm quản lý phương tiện ---
+    addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
+    updateVehicle: (vehicle: Vehicle) => Promise<void>;
+    deleteVehicle: (vehicleId: string) => Promise<void>;
 }
