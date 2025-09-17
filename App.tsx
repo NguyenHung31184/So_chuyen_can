@@ -182,7 +182,8 @@ const App: React.FC = () => {
         const baseScreens = [Screen.OVERVIEW, Screen.COURSE];
         if (currentUser.role === UserRole.ADMIN) return [...baseScreens, Screen.REPORT, Screen.ADMIN];
         if (currentUser.role === UserRole.MANAGER) return [...baseScreens, Screen.REPORT];
-        return baseScreens;
+        if (currentUser.role === UserRole.GROUP_LEADER) return [Screen.COURSE];
+        return baseScreens; // For TEACHER
     }, [currentUser]);
 
     const renderScreen = () => {

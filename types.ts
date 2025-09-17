@@ -4,6 +4,7 @@ export enum UserRole {
     MANAGER = 'Manager',
     TEACHER = 'Teacher',
     STUDENT = 'Student',
+    GROUP_LEADER = 'Nhóm trưởng',
 }
 
 export enum TeacherSpecialty {

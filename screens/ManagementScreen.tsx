@@ -48,7 +48,7 @@ const ManagementScreen: React.FC = () => {
 
     // --- DỮ LIỆU ĐƯỢC GHI NHỚ --- //
     const teachers = useMemo(() => (users || []).filter(u => u?.role === UserRole.TEACHER), [users]);
-    const managersAndAdmins = useMemo(() => (users || []).filter(u => u && (u.role === UserRole.ADMIN || u.role === UserRole.MANAGER)), [users]);
+    const managementUsers = useMemo(() => (users || []).filter(u => u && (u.role === UserRole.ADMIN || u.role === UserRole.MANAGER || u.role === UserRole.GROUP_LEADER)), [users]);
     const filteredStudents = useMemo(() => {
         if (!Array.isArray(students)) return [];
         if (studentCourseFilter === 'all') return students;
@@ -309,9 +309,9 @@ const ManagementScreen: React.FC = () => {
 
             {/* Users Section (Managers/Admins) */}
             <div className="bg-white p-6 rounded-xl shadow-md">
-                <h3 className="text-xl font-bold mb-4">Danh sách Quản lý/Admin</h3>
+                <h3 className="text-xl font-bold mb-4">Danh sách Quản lý / Admin / Nhóm Trưởng</h3>
                  <div className="space-y-2 mb-4 max-h-72 overflow-y-auto pr-2">
-                    {managersAndAdmins.map(item => (
+                    {managementUsers.map(item => (
                         <div key={item.id} className="flex justify-between items-center p-2 border rounded-lg">
                             <span>{item.name} - {item.role} (SĐT: {item.phone})</span>
                             <div>
@@ -331,6 +331,7 @@ const ManagementScreen: React.FC = () => {
                         <select value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as UserRole})} className="w-full p-2 border rounded">
                            <option value={UserRole.MANAGER}>Quản lý</option>
                            <option value={UserRole.ADMIN}>Admin</option>
+                           <option value={UserRole.GROUP_LEADER}>Nhóm trưởng</option>
                         </select>
                     </div>
                     <div className="text-right space-x-2">
