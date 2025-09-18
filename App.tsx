@@ -1,13 +1,14 @@
+// File: App.tsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { AppContext } from './contexts/AppContext';
 import { User, Course, Student, Session, UserRole, Screen, AppContextType, WeeklyPlan, Vehicle } from './types';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
-    doc, getDoc, setDoc, updateDoc, collection, onSnapshot, 
-    addDoc, deleteDoc, Timestamp
+    doc, getDoc, updateDoc, collection, onSnapshot, 
+    addDoc, deleteDoc
 } from 'firebase/firestore';
 
 import LoginScreen from './screens/LoginScreen';
@@ -17,9 +18,9 @@ import CourseScreen from './screens/CourseScreen';
 import ReportScreen from './screens/ReportScreen';
 import ManagementScreen from './screens/ManagementScreen';
 import BottomNav from './components/BottomNav';
+import ReconciliationReportScreen from './screens/ReconciliationReportScreen';
 
 const App: React.FC = () => {
-    // --- AUTH STATE ---
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
@@ -27,10 +28,8 @@ const App: React.FC = () => {
     const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
     const [mustChangePassword, setMustChangePassword] = useState(false);
     
-    // --- UI STATE ---
     const [activeScreen, setActiveScreen] = useState<Screen>(Screen.OVERVIEW);
     
-    // --- DATA STATE (From Firestore) ---
     const [courses, setCourses] = useState<Course[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [users, setUsers] = useState<User[]>([]); 
@@ -39,7 +38,6 @@ const App: React.FC = () => {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [dataLoading, setDataLoading] = useState(true);
 
-    // --- AUTH & DATA FETCHING ---
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
             setFirebaseUser(fbUser);
@@ -60,7 +58,6 @@ const App: React.FC = () => {
             setAuthLoading(false);
         });
 
-        // Set up real-time listeners
         const unsubscribers = [
             onSnapshot(collection(db, "users"), snapshot => 
                 setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)))),
@@ -69,10 +66,7 @@ const App: React.FC = () => {
             onSnapshot(collection(db, "students"), snapshot => 
                 setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)))),
             onSnapshot(collection(db, "schedules"), snapshot => 
-                setSessions(snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return { id: doc.id, ...data, date: (data.date as Timestamp).toDate().toISOString().split('T')[0] } as Session;
-                }))),
+                setSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)))),
             onSnapshot(collection(db, "weekly_plans"), snapshot => 
                 setWeeklyPlans(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyPlan)))),
             onSnapshot(collection(db, "vehicles"), snapshot => 
@@ -87,7 +81,6 @@ const App: React.FC = () => {
         };
     }, []);
 
-    // --- HANDLERS ---
     const handleLogin = async (phone: string, password: string) => {
         setLoginError(null);
         const email = `${phone}@htts.com`;
@@ -148,49 +141,45 @@ const App: React.FC = () => {
         await deleteDoc(doc(db, collectionName, docId));
     };
 
-    // --- APP CONTEXT VALUE ---
-    const appContextValue: AppContextType = useMemo(() => ({
-        currentUser,
-        courses,
-        students,
-        users,
-        sessions,
-        weeklyPlans,
-        vehicles,
-        addSession: async (sessionData) => {
-             await addDoc(collection(db, "schedules"), { ...sessionData, date: Timestamp.fromDate(new Date(sessionData.date)) });
-        },
-        updateSession: async (sessionData) => {
-            const { id, ...data } = sessionData;
-            await updateDoc(doc(db, "schedules", id), { ...data, date: Timestamp.fromDate(new Date(data.date))});
-        },
-        deleteSession: handleDeleteDoc("schedules"),
-        addCourse: handleAddDoc("courses"),
-        updateCourse: handleUpdateDoc("courses"),
-        deleteCourse: handleDeleteDoc("courses"),
-        addStudent: handleAddDoc("students"),
-        updateStudent: handleUpdateDoc("students"),
-        deleteStudent: handleDeleteDoc("students"),
-        addUser: handleAddUser,
-        updateUser: handleUpdateDoc("users"),
-        deleteUser: handleDeleteDoc("users"),
-        addWeeklyPlan: handleAddDoc("weekly_plans"),
-        updateWeeklyPlan: handleUpdateDoc("weekly_plans"),
-        deleteWeeklyPlan: handleDeleteDoc("weekly_plans"),
-        addVehicle: handleAddDoc("vehicles"),
-        updateVehicle: handleUpdateDoc("vehicles"),
-        deleteVehicle: handleDeleteDoc("vehicles"),
-        teachers: users.filter(u => u.role === UserRole.TEACHER),
-    }), [currentUser, sessions, courses, students, users, weeklyPlans, vehicles]);
-
-    // --- RENDER LOGIC ---
+    const appContextValue: AppContextType | null = useMemo(() => {
+        if (dataLoading) return null;
+        return {
+            currentUser,
+            courses,
+            students,
+            users,
+            sessions,
+            weeklyPlans,
+            vehicles,
+            addSession: handleAddDoc("schedules"),
+            updateSession: handleUpdateDoc("schedules"),
+            deleteSession: handleDeleteDoc("schedules"),
+            addCourse: handleAddDoc("courses"),
+            updateCourse: handleUpdateDoc("courses"),
+            deleteCourse: handleDeleteDoc("courses"),
+            addStudent: handleAddDoc("students"),
+            updateStudent: handleUpdateDoc("students"),
+            deleteStudent: handleDeleteDoc("students"),
+            addUser: handleAddUser,
+            updateUser: handleUpdateDoc("users"),
+            deleteUser: handleDeleteDoc("users"),
+            addWeeklyPlan: handleAddDoc("weekly_plans"),
+            updateWeeklyPlan: handleUpdateDoc("weekly_plans"),
+            deleteWeeklyPlan: handleDeleteDoc("weekly_plans"),
+            addVehicle: handleAddDoc("vehicles"),
+            updateVehicle: handleUpdateDoc("vehicles"),
+            deleteVehicle: handleDeleteDoc("vehicles"),
+            teachers: users.filter(u => u.role === UserRole.TEACHER),
+        }
+    }, [currentUser, sessions, courses, students, users, weeklyPlans, vehicles, dataLoading]);
+    
     const availableScreens = useMemo(() => {
         if (!currentUser) return [];
-        const baseScreens = [Screen.OVERVIEW, Screen.COURSE];
-        if (currentUser.role === UserRole.ADMIN) return [...baseScreens, Screen.REPORT, Screen.ADMIN];
-        if (currentUser.role === UserRole.MANAGER) return [...baseScreens, Screen.REPORT];
-        if (currentUser.role === UserRole.GROUP_LEADER) return [Screen.COURSE];
-        return baseScreens; // For TEACHER
+        const baseScreens = [Screen.OVERVIEW, Screen.COURSES]; 
+        if (currentUser.role === UserRole.ADMIN) return [...baseScreens, Screen.REPORTS, Screen.MANAGEMENT];
+        if (currentUser.role === UserRole.MANAGER) return [...baseScreens, Screen.REPORTS];
+        if (currentUser.role === UserRole.TEAM_LEADER) return [Screen.COURSES];
+        return baseScreens;
     }, [currentUser]);
 
     const renderScreen = () => {
@@ -200,9 +189,10 @@ const App: React.FC = () => {
         }
         switch (activeScreen) {
             case Screen.OVERVIEW: return <OverviewScreen />;
-            case Screen.COURSE: return <CourseScreen />;
-            case Screen.REPORT: return <ReportScreen />;
-            case Screen.ADMIN: return <ManagementScreen />;
+            case Screen.COURSES: return <CourseScreen />;
+            case Screen.REPORTS: return <ReportScreen />;
+            case Screen.MANAGEMENT: return <ManagementScreen setActiveScreen={setActiveScreen} />;
+            case Screen.RECONCILIATION_REPORT: return <ReconciliationReportScreen />;
             default: 
                 if(currentUser && availableScreens.length > 0) {
                     setActiveScreen(availableScreens[0]);
@@ -215,7 +205,7 @@ const App: React.FC = () => {
     if (authLoading) return <div className="flex justify-center items-center min-h-screen">Đang khởi động...</div>;
     if (!currentUser) return <LoginScreen onLogin={handleLogin} error={loginError} />;
     if (mustChangePassword) return <ChangePasswordScreen onSubmit={handlePasswordChanged} error={changePasswordError} />;
-    if (dataLoading) return <div className="flex justify-center items-center min-h-screen">Đang tải dữ liệu...</div>;
+    if (dataLoading || !appContextValue) return <div className="flex justify-center items-center min-h-screen">Đang tải dữ liệu...</div>;
 
     return (
         <AppContext.Provider value={appContextValue}>

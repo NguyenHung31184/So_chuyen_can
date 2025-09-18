@@ -1,10 +1,9 @@
 import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { AppContext } from '../contexts/AppContext';
-import { Session, SessionType, TeacherSpecialty, Student, UserRole } from '../types';
+import { Session, TeacherSpecialty, UserRole } from '../types';
 
 interface NewSessionModalProps {
   onClose: () => void;
-  onSave: (session: Omit<Session, 'id'>) => void;
 }
 
 const CalendarIcon = () => (
@@ -13,48 +12,45 @@ const CalendarIcon = () => (
     </svg>
 );
 
-const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) => {
+const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose }) => {
   const context = useContext(AppContext);
 
-  // --- State (giữ nguyên) ---
-  const [sessionType, setSessionType] = useState<SessionType>(SessionType.THEORY);
+  // === CÁC STATE CỦA FORM (ĐÃ CẬP NHẬT) ===
+  const [sessionType, setSessionType] = useState<'Lý thuyết' | 'Thực hành'>('Lý thuyết');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('06:00');
   const [endTime, setEndTime] = useState('12:00');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [teacherId, setTeacherId] = useState('');
-  const [topic, setTopic] = useState('');
+  const [content, setContent] = useState(''); // Đổi 'topic' thành 'content'
   const [presentStudentIds, setPresentStudentIds] = useState<string[]>([]);
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
 
   if (!context) return null;
 
-  const { courses, users, students } = context;
-  const teachers = useMemo(() => users.filter(u => u.role === UserRole.TEACHER), [users]);
+  // === LẤY ĐÚNG HÀM VÀ DỮ LIỆU TỪ CONTEXT ===
+  const { courses, users, students, addSession, currentUser } = context;
+  const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
 
-  // Effect để reset giáo viên và điểm danh khi khóa học hoặc loại buổi học thay đổi
   useEffect(() => {
     setPresentStudentIds([]);
-    setTeacherId(''); // Tự động reset giáo viên đã chọn
+    setTeacherId('');
   }, [selectedCourseId, sessionType]);
 
-  // === LOGIC LỌC GIÁO VIÊN THEO CHUYÊN MÔN ===
   const availableTeachers = useMemo(() => {
     if (!selectedCourseId) return [];
-    
-    // Xác định chuyên môn cần tìm dựa trên loại buổi học
-    const requiredSpecialty = sessionType === SessionType.THEORY 
-        ? TeacherSpecialty.THEORY 
-        : TeacherSpecialty.PRACTICE;
-
-    // Lọc các giáo viên vừa được phân công cho khóa học VÀ có chuyên môn phù hợp
-    return teachers.filter(t => 
+    const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
+    return (teachers || []).filter(t => 
         t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty
     );
-  }, [selectedCourseId, teachers, sessionType]); // Thêm sessionType vào dependency
+  }, [selectedCourseId, teachers, sessionType]);
   
   const courseStudents = useMemo(() => {
       if (!selectedCourseId) return [];
-      return students.filter(s => s.courseId === selectedCourseId);
+      return (students || []).filter(s => s.courseId === selectedCourseId);
   }, [selectedCourseId, students]);
 
   const handleAttendanceToggle = (studentId: string) => {
@@ -63,31 +59,65 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
       );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // === LOGIC `handleSubmit` ĐÃ ĐƯỢC VIẾT LẠI HOÀN TOÀN ĐỂ LƯU ĐÚNG CHUẨN DỮ LIỆU ===
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCourseId || !teacherId || !topic) {
-        alert('Vui lòng điền đầy đủ thông tin: Khóa học, Giảng viên và Nội dung giảng dạy.');
+    setError(null);
+
+    if (!selectedCourseId || !teacherId || !content) {
+        setError('Vui lòng điền đầy đủ: Khóa học, Giảng viên và Nội dung.');
         return;
     }
-    const newSession: Omit<Session, 'id'> = {
-        type: sessionType, date, startTime, endTime, teacherId,
-        courseId: selectedCourseId, topic, studentIds: presentStudentIds,
-    };
-    onSave(newSession);
+    if (!currentUser) {
+        setError('Không thể xác định người dùng hiện tại. Vui lòng thử lại.');
+        return;
+    }
+
+    setIsLoading(true);
+
+    try {
+        const startTimestamp = new Date(`${date}T${startTime}`).getTime();
+        const endTimestamp = new Date(`${date}T${endTime}`).getTime();
+
+        if (startTimestamp >= endTimestamp) {
+            setError('Thời gian kết thúc phải sau thời gian bắt đầu.');
+            setIsLoading(false);
+            return;
+        }
+
+        const newSession: Omit<Session, 'id'> = {
+            courseId: selectedCourseId,
+            startTimestamp,
+            endTimestamp,
+            type: sessionType,
+            teacherId,
+            content,
+            attendees: presentStudentIds,
+            createdBy: currentUser.role === UserRole.TEACHER ? 'teacher' : 'team_leader',
+            creatorId: currentUser.id,
+        };
+
+        await addSession(newSession);
+        alert('Lưu buổi học thành công!');
+        onClose();
+
+    } catch (err: any) {
+        console.error("Lỗi khi lưu buổi học:", err);
+        setError(err.message || 'Đã có lỗi xảy ra.');
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const getCourseDisplayString = (courseId: string) => {
-      const course = courses.find(c => c.id === courseId);
+      const course = (courses || []).find(c => c.id === courseId);
       if (!course) return 'N/A';
       return `${course.name} - Khóa ${course.courseNumber}`;
   };
 
-  // === GIAO DIỆN ĐÃ FIX LỖI CUỘN VÀ TỐI ƯU HÓA ===
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-      {/* Cấu trúc flex để tách header, content và footer */}
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
-        {/* Header cố định */}
         <header className="flex-shrink-0 p-5 flex justify-between items-center border-b">
           <h2 className="text-xl font-bold text-gray-800">Ghi nhận buổi học mới</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Đóng">
@@ -95,16 +125,14 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
           </button>
         </header>
 
-        {/* Form chiếm toàn bộ không gian còn lại */}
         <form onSubmit={handleSubmit} className="flex-grow contents">
-            {/* Content (chỉ phần này được cuộn) */}
             <div className="flex-grow p-6 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="session-type" className="block text-sm font-medium text-gray-700 mb-1">Loại buổi học</label>
-                      <select id="session-type" value={sessionType} onChange={(e) => setSessionType(e.target.value as SessionType)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary">
-                        <option value={SessionType.THEORY}>Lý thuyết</option>
-                        <option value={SessionType.PRACTICE}>Thực hành</option>
+                      <select id="session-type" value={sessionType} onChange={(e) => setSessionType(e.target.value as 'Lý thuyết' | 'Thực hành')} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary">
+                        <option value="Lý thuyết">Lý thuyết</option>
+                        <option value="Thực hành">Thực hành</option>
                       </select>
                     </div>
                     <div className="relative">
@@ -113,15 +141,13 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
                       <div className="absolute inset-y-0 right-0 top-7 pr-3 flex items-center pointer-events-none"><CalendarIcon /></div>
                     </div>
                 </div>
-
                 <div>
                     <label htmlFor="course" className="block text-sm font-medium text-gray-700 mb-1">Khóa đào tạo</label>
                     <select id="course" value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary">
                         <option value="">Chọn khóa đào tạo</option>
-                        {courses.map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
+                        {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
                     </select>
                 </div>
-
                 <div>
                     <label htmlFor="teacher" className="block text-sm font-medium text-gray-700 mb-1">Giảng viên phụ trách</label>
                     <select id="teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId}>
@@ -129,12 +155,10 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
                         {availableTeachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
                     </select>
                 </div>
-
                 <div>
-                    <label htmlFor="topic" className="block text-sm font-medium text-gray-700 mb-1">Nội dung giảng dạy</label>
-                    <input id="topic" type="text" value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId} placeholder="Nhập chủ đề buổi học..." />
+                    <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1">Nội dung giảng dạy</label>
+                    <input id="content" type="text" value={content} onChange={(e) => setContent(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" disabled={!selectedCourseId} placeholder="Nhập chủ đề buổi học..." />
                 </div>
-
                 {courseStudents.length > 0 && (
                     <div className="border-t pt-4">
                         <h4 className="text-md font-medium text-gray-800 mb-3">Điểm danh học viên ({presentStudentIds.length}/{courseStudents.length})</h4>
@@ -148,7 +172,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
                         </div>
                     </div>
                 )}
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="start-time" className="block text-sm font-medium text-gray-700 mb-1">Giờ bắt đầu</label>
@@ -159,15 +182,14 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSave }) =>
                       <input id="end-time" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary" />
                     </div>
                 </div>
+                {error && <p className="text-sm text-red-600 text-center">{error}</p>}
             </div>
-          
-            {/* Footer cố định */}
             <footer className="flex-shrink-0 p-4 bg-gray-50 flex justify-end gap-3 border-t">
-                <button type="button" onClick={onClose} className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 font-semibold transition-colors">
+                <button type="button" onClick={onClose} disabled={isLoading} className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 font-semibold transition-colors disabled:opacity-50">
                   Hủy
                 </button>
-                <button type="submit" className="px-6 py-2 rounded-md font-semibold text-white bg-primary hover:bg-primary-dark transition-colors">
-                  Lưu lại
+                <button type="submit" disabled={isLoading} className="px-6 py-2 rounded-md font-semibold text-white bg-primary hover:bg-primary-dark transition-colors disabled:opacity-50">
+                  {isLoading ? 'Đang lưu...' : 'Lưu lại'}
                 </button>
             </footer>
         </form>

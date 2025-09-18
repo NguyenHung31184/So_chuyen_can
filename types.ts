@@ -1,178 +1,160 @@
+// File: types.ts
 
 // =======================================================================
-// ENUMS - Định nghĩa các giá trị hằng số để đảm bảo tính nhất quán
+// ENUMS - Định nghĩa các hằng số
 // =======================================================================
-
-export enum UserRole {
-    ADMIN = 'Admin',
-    MANAGER = 'Manager',
-    TEACHER = 'Teacher',
-    STUDENT = 'Student',
-    GROUP_LEADER = 'Nhóm trưởng',
-}
-
-export enum TeacherSpecialty {
-    THEORY = 'Lý thuyết',
-    PRACTICE = 'Thực hành',
-    MANAGEMENT = 'Quản lý',
-}
-
-export enum TeacherContractType {
-    PERMANENT = 'Cơ hữu',
-    CONTRACT = 'Hợp đồng',
-}
-
-export enum SessionType {
-    THEORY = 'Lý thuyết',
-    PRACTICE = 'Thực hành',
-}
 
 export enum Screen {
     OVERVIEW = 'Tổng quan',
-    COURSE = 'Khoá học',
-    REPORT = 'Báo cáo',
-    ADMIN = 'Quản trị',
-}
+        COURSES = 'Khóa học',
+            REPORTS = 'Báo cáo',
+                MANAGEMENT = 'Quản trị',
+                    RECONCILIATION_REPORT = 'Báo cáo Đối chiếu',
+                    }
 
-// --- NEW: Enums cho cấu trúc chi phí mới ---
-export enum PaymentType {
-    RATE = 'rate',      // Theo định mức
-    PACKAGE = 'package', // Trọn gói
-}
+                    export enum UserRole {
+                        ADMIN = 'Admin',
+                            MANAGER = 'Quản lý',
+                                TEAM_LEADER = 'Nhóm trưởng',
+                                    TEACHER = 'Giáo viên',
+                                    }
 
-export enum RateUnit {
-    HOUR = 'hour',      // Theo giờ
-    SESSION = 'session', // Theo buổi
-}
+                                    export enum TeacherSpecialty {
+                                        THEORY = 'Lý thuyết',
+                                            PRACTICE = 'Thực hành',
+                                                GENERAL = 'Tổng hợp',
+                                                }
 
-export enum FuelType {
-    ELECTRIC = 'Điện',
-    DIESEL = 'Diesel',
-}
+                                                export enum TeacherContractType {
+                                                    FULL_TIME = 'Biên chế',
+                                                        CONTRACT = 'Hợp đồng',
+                                                        }
 
+                                                        export enum PaymentType {
+                                                            RATE = 'rate',
+                                                                PACKAGE = 'package',
+                                                                }
 
-// =======================================================================
-// INTERFACES - Định nghĩa cấu trúc cho các đối tượng dữ liệu
-// =======================================================================
+                                                                export enum RateUnit {
+                                                                    HOUR = 'hour',
+                                                                        SESSION = 'session',
+                                                                        }
 
-// --- NEW: Cấu trúc lưu trữ thông tin thù lao của giáo viên ---
-export interface TeacherPayment {
-    type: PaymentType;  // 'rate' hoặc 'package'
-    amount: number;     // Số tiền (VNĐ)
-    rateUnit?: RateUnit; // 'hour' hoặc 'session' (chỉ áp dụng khi type là 'rate')
-}
+                                                                        export enum FuelType {
+                                                                            ELECTRIC = 'Điện',
+                                                                                DIESEL = 'Diesel',
+                                                                                }
 
-// --- NEW: Cấu trúc cho phương tiện/thiết bị thực hành ---
-export interface Vehicle {
-    id: string;
-    name: string;
-    fuelType: FuelType;
-    consumptionRate: number; // Định mức tiêu thụ
-    consumptionUnit: string; // Đơn vị của định mức (ví dụ: "kWh/giờ" hoặc "lít/giờ")
-}
+                                                                                // =======================================================================
+                                                                                // INTERFACES - Định nghĩa cấu trúc cho các đối tượng dữ liệu
+                                                                                // =======================================================================
 
+                                                                                export interface TeacherPayment {
+                                                                                    type: PaymentType;
+                                                                                        amount: number;
+                                                                                            rateUnit?: RateUnit;
+                                                                                            }
 
-export interface User {
-    id: string;
-    name: string;
-    phone: string;
-    role: UserRole;
-    email?: string;
-    mustChangePassword?: boolean;
-    
-    // Các trường dành riêng cho giáo viên
-    contractType?: TeacherContractType;
-    specialty?: TeacherSpecialty;
-    courseIds?: string[];
-    
-    // --- UPDATED: Thêm thông tin thù lao cho giáo viên ---
-    theoryPayment?: TeacherPayment;
-    practicePayment?: TeacherPayment;
-}
+                                                                                            export interface Vehicle {
+                                                                                                id: string;
+                                                                                                    name: string;
+                                                                                                        fuelType: FuelType;
+                                                                                                            consumptionRate: number;
+                                                                                                                consumptionUnit: string;
+                                                                                                                }
 
-export interface Teacher extends User {
-    role: UserRole.TEACHER;
-}
+                                                                                                                export interface User {
+                                                                                                                    id: string;
+                                                                                                                        name: string;
+                                                                                                                            phone: string;
+                                                                                                                                role: UserRole;
+                                                                                                                                    mustChangePassword?: boolean;
+                                                                                                                                        specialty?: TeacherSpecialty;
+                                                                                                                                            contractType?: TeacherContractType;
+                                                                                                                                                courseIds?: string[];
+                                                                                                                                                    payment?: TeacherPayment;
+                                                                                                                                                    }
 
-export interface Session {
-    id: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    courseId: string;
-    teacherId: string;
-    studentIds: string[];
-    topic: string;
-    type: SessionType;
+                                                                                                                                                    export interface Student {
+                                                                                                                                                        id: string;
+                                                                                                                                                            name: string;
+                                                                                                                                                                birthDate: string;
+                                                                                                                                                                    phone: string;
+                                                                                                                                                                        group: string;
+                                                                                                                                                                            courseId: string;
+                                                                                                                                                                            }
 
-    // --- UPDATED: Thêm ID của phương tiện đã sử dụng cho buổi thực hành ---
-    vehicleId?: string; 
-}
+                                                                                                                                                                            export interface Course {
+                                                                                                                                                                                id: string;
+                                                                                                                                                                                    name: string;
+                                                                                                                                                                                        courseNumber: number;
+                                                                                                                                                                                            startDate: string;
+                                                                                                                                                                                                endDate: string;
+                                                                                                                                                                                                }
 
-export interface WeeklyPlan {
-    id: string;
-    date: string;
-    timeRange: string;
-    content: string;
-    type: string;
-    instructor: string;
-}
+                                                                                                                                                                                                export interface Session {
+                                                                                                                                                                                                    id: string;
+                                                                                                                                                                                                        courseId: string;
+                                                                                                                                                                                                            startTimestamp: number;
+                                                                                                                                                                                                                endTimestamp: number;
+                                                                                                                                                                                                                    type: 'Lý thuyết' | 'Thực hành';
+                                                                                                                                                                                                                        teacherId: string;
+                                                                                                                                                                                                                            vehicleId?: string;
+                                                                                                                                                                                                                                content: string;
+                                                                                                                                                                                                                                    attendees: string[];
+                                                                                                                                                                                                                                        createdBy: 'teacher' | 'team_leader';
+                                                                                                                                                                                                                                            creatorId: string;
+                                                                                                                                                                                                                                            }
 
-export interface Course {
-    id: string;
-    name: string;
-    courseNumber: number;
-    startDate: string;
-    endDate: string;
-}
+                                                                                                                                                                                                                                            export interface WeeklyPlan {
+                                                                                                                                                                                                                                                id: string;
+                                                                                                                                                                                                                                                    // Thêm các trường khác cho WeeklyPlan nếu có
+                                                                                                                                                                                                                                                        // Ví dụ: title: string; content: string;
+                                                                                                                                                                                                                                                        }
 
-export interface Student {
-    id: string;
-    name: string;
-    birthDate: string;
-    phone: string;
-    group: string;
-    courseId: string;
-}
+                                                                                                                                                                                                                                                        export interface TentativeScheduleItem {
+                                                                                                                                                                                                                                                            id: string;
+                                                                                                                                                                                                                                                                date: string;
+                                                                                                                                                                                                                                                                    time: string;
+                                                                                                                                                                                                                                                                        content: string;
+                                                                                                                                                                                                                                                                            location: string;
+                                                                                                                                                                                                                                                                                notes: string;
+                                                                                                                                                                                                                                                                                }
 
+                                                                                                                                                                                                                                                                                export interface TeacherReport {
+                                                                                                                                                                                                                                                                                    teacherId: string;
+                                                                                                                                                                                                                                                                                        teacherName: string;
+                                                                                                                                                                                                                                                                                            theoryHours: number;
+                                                                                                                                                                                                                                                                                                practiceHours: number;
+                                                                                                                                                                                                                                                                                                    totalHours: number;
+                                                                                                                                                                                                                                                                                                    }
 
-// =======================================================================
-// APP CONTEXT TYPE - Định nghĩa cấu trúc cho Global State Management
-// =======================================================================
-
-export interface AppContextType {
-    currentUser: User | null;
-    courses: Course[];
-    students: Student[];
-    sessions: Session[];
-    users: User[];
-    weeklyPlans: WeeklyPlan[];
-    // --- NEW: Thêm 'vehicles' vào context ---
-    vehicles: Vehicle[];
-
-    // --- Các hàm xử lý dữ liệu (async) ---
-    addCourse: (course: Omit<Course, 'id'>) => Promise<void>;
-    updateCourse: (course: Course) => Promise<void>;
-    deleteCourse: (courseId: string) => Promise<void>;
-    
-    addStudent: (student: Omit<Student, 'id'>) => Promise<void>;
-    updateStudent: (student: Student) => Promise<void>;
-    deleteStudent: (studentId: string) => Promise<void>;
-    
-    addSession: (session: Omit<Session, 'id'>) => Promise<void>;
-    updateSession: (session: Session) => Promise<void>;
-    deleteSession: (sessionId: string) => Promise<void>;
-    
-    addUser: (user: Omit<User, 'id'>) => Promise<{success: boolean, message: string}>;
-    updateUser: (user: User) => Promise<void>;
-    deleteUser: (userId: string) => Promise<void>;
-    
-    addWeeklyPlan: (plan: Omit<WeeklyPlan, 'id'>) => Promise<void>;
-    updateWeeklyPlan: (plan: WeeklyPlan) => Promise<void>;
-    deleteWeeklyPlan: (planId: string) => Promise<void>;
-
-    // --- NEW: Thêm các hàm quản lý phương tiện ---
-    addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
-    updateVehicle: (vehicle: Vehicle) => Promise<void>;
-    deleteVehicle: (vehicleId: string) => Promise<void>;
-}
+                                                                                                                                                                                                                                                                                                    // Định nghĩa Type cho AppContext để sử dụng trong App.tsx
+                                                                                                                                                                                                                                                                                                    export interface AppContextType {
+                                                                                                                                                                                                                                                                                                        currentUser: User | null;
+                                                                                                                                                                                                                                                                                                            courses: Course[];
+                                                                                                                                                                                                                                                                                                                students: Student[];
+                                                                                                                                                                                                                                                                                                                    users: User[];
+                                                                                                                                                                                                                                                                                                                        sessions: Session[];
+                                                                                                                                                                                                                                                                                                                            weeklyPlans: WeeklyPlan[];
+                                                                                                                                                                                                                                                                                                                                vehicles: Vehicle[];
+                                                                                                                                                                                                                                                                                                                                    teachers: User[];
+                                                                                                                                                                                                                                                                                                                                        addSession: (data: Omit<Session, 'id'>) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                            updateSession: (data: Session) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                deleteSession: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                    addCourse: (data: Omit<Course, 'id'>) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                        updateCourse: (data: Course) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                            deleteCourse: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                addStudent: (data: Omit<Student, 'id'>) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                    updateStudent: (data: Student) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                        deleteStudent: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                            addUser: (user: Omit<User, 'id'> & { password?: string }) => Promise<{ success: boolean; message: string }>;
+                                                                                                                                                                                                                                                                                                                                                                                updateUser: (data: Partial<User> & { id: string }) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                    deleteUser: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                        addWeeklyPlan: (data: Omit<WeeklyPlan, 'id'>) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                            updateWeeklyPlan: (data: WeeklyPlan) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                                deleteWeeklyPlan: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                                    addVehicle: (data: Omit<Vehicle, 'id'>) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                                        updateVehicle: (data: Vehicle) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                                            deleteVehicle: (id: string) => Promise<void>;
+                                                                                                                                                                                                                                                                                                                                                                                                            }
