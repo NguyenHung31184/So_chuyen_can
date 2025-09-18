@@ -3,20 +3,37 @@ import { AppContext } from '../contexts/AppContext';
 import NewSessionModal from '../components/NewSessionModal';
 import { Session, UserRole } from '../types';
 
-// Hàm helper này được thiết kế để xử lý cả Timestamp từ Firestore và các định dạng khác
+// === THAY ĐỔI QUAN TRỌNG NHẤT: Sửa lại hàm toDate() để đọc được định dạng DD/MM/YYYY ===
 const toDate = (value: any): Date | null => {
     if (!value) return null;
-    // Ưu tiên xử lý đối tượng Timestamp của Firestore
     if (typeof value.toDate === 'function') {
-        return value.toDate();
+        return value.toDate(); // Xử lý Timestamp của Firestore
     }
-    // Xử lý các trường hợp khác như string hoặc number
-    if (typeof value === 'string' || typeof value === 'number') {
+    if (typeof value === 'string') {
+        // Thử xử lý định dạng 'YYYY-MM-DD' (chuẩn)
+        let date = new Date(value);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+        
+        // Thử xử lý định dạng 'DD/MM/YYYY' (phổ biến ở Việt Nam)
+        const parts = value.split('/');
+        if (parts.length === 3) {
+            const [day, month, year] = parts.map(Number);
+            // new Date(year, month - 1, day) là cách an toàn để tạo ngày
+            date = new Date(year, month - 1, day);
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+    }
+    if (typeof value === 'number') {
         const date = new Date(value);
         if (!isNaN(date.getTime())) return date;
     }
     return null;
 };
+
 
 const InfoCard: React.FC<{ title: string; value: number | string; color: string }> = ({ title, value, color }) => (
     <div className={`p-4 rounded-lg shadow-md text-center ${color}`}>
@@ -48,7 +65,7 @@ const CourseScreen: React.FC = () => {
         }).sort((a, b) => (a.startTimestamp || 0) - (b.startTimestamp || 0));
     }, [sessions, selectedMonth, selectedYear]);
 
-    // Logic này sẽ hoạt động chính xác sau khi bạn sửa dữ liệu trên Firestore
+    // Logic này bây giờ sẽ hoạt động chính xác nhờ hàm toDate() đã được sửa
     const activeCoursesInMonth = useMemo(() => {
         if (!courses) return [];
         const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
@@ -138,12 +155,10 @@ const CourseScreen: React.FC = () => {
                                 </select>
                             </div>
                         </div>
-                        {/* Bạn có thể thêm bảng danh sách khóa học ở đây nếu muốn */}
                     </div>
                 </>
             )}
 
-            {/* Bảng Triển khai lịch đào tạo */}
             <div className="bg-white p-4 md:p-6 rounded-xl shadow-lg">
                 <h2 className="text-xl font-bold text-gray-700 mb-4">
                     Triển khai lịch đào tạo (Thực tế)
