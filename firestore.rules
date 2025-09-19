@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Cho phép bất kỳ người dùng nào đã đăng nhập (authenticated)
+    // được quyền đọc và ghi vào tất cả các collection.
+    // Đây là một luật cơ bản và an toàn cho môi trường phát triển (development).
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
