@@ -1,413 +1,449 @@
-import React, { useState, useContext, useMemo, useRef } from 'react';
-import { AppContext } from '../contexts/AppContext';
-import { Course, Student, User, TeacherSpecialty, TeacherContractType, UserRole, Screen, AppContextType } from '../types';
+import React, { useState, useContext, useMemo } from 'react';
+import { AppContext, AppContextType } from '../contexts/AppContext';
+import { Course, Session, Student, User, UserRole, Vehicle, FuelType, PaymentType, RateUnit } from '../types';
 import * as XLSX from 'xlsx';
 
-// === THAY ĐỔI 1: Định nghĩa props để nhận hàm setActiveScreen từ App.tsx ===
-interface ManagementScreenProps {
-    setActiveScreen: (screen: Screen) => void;
-}
-
-// Component Card để giao diện đẹp hơn (tùy chọn)
-const ManagementCard: React.FC<{ title: string; description: string; onClick: () => void, className?: string }> = ({ title, description, onClick, className = '' }) => (
-    <button
-        onClick={onClick}
-        className={`block p-6 bg-white border border-gray-200 rounded-lg shadow-md hover:bg-gray-100 text-left w-full h-full transition-all duration-200 ease-in-out ${className}`}
-    >
-        <h5 className="mb-2 text-xl font-bold tracking-tight text-gray-900">{title}</h5>
-        <p className="font-normal text-gray-700">{description}</p>
-    </button>
-);
-
-
-const ConfirmationModal: React.FC<{ message: string; onConfirm: () => void; onCancel: () => void; }> = ({ message, onConfirm, onCancel }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm mx-auto">
-            <p className="mb-4 text-gray-800">{message}</p>
-            <div className="flex justify-end space-x-4">
-                <button onClick={onCancel} className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg transition-colors">Không</button>
-                <button onClick={onConfirm} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">Có, Xóa</button>
-            </div>
-        </div>
-    </div>
-);
-
-// === THAY ĐỔI 2: Component nhận prop setActiveScreen ===
-const ManagementScreen: React.FC<ManagementScreenProps> = ({ setActiveScreen }) => {
-    const context = useContext(AppContext);
-
-    // === TOÀN BỘ PHẦN LOGIC VÀ STATE CỦA BẠN ĐƯỢC GIỮ NGUYÊN ===
-    const initialCourseForm: Omit<Course, 'id'> = { name: '', courseNumber: 0, startDate: '', endDate: '' };
-    const initialStudentForm: Omit<Student, 'id'> = { name: '', birthDate: '', phone: '', group: '', courseId: '' };
-    const initialTeacherForm: Partial<User> & { password?: string } = { name: '', phone: '', role: UserRole.TEACHER, contractType: TeacherContractType.CONTRACT, specialty: TeacherSpecialty.THEORY, courseIds: [], password: '' };
-    const initialUserForm: Omit<User, 'id'> & { password?: string } = { name: '', phone: '', role: UserRole.MANAGER, password: '' };
-    const [courseForm, setCourseForm] = useState(initialCourseForm);
-    const [studentForm, setStudentForm] = useState(initialStudentForm);
-    const [teacherForm, setTeacherForm] = useState(initialTeacherForm);
-    const [userForm, setUserForm] = useState(initialUserForm);
-    const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-    const [editingStudent, setEditingStudent] = useState<Student | null>(null);
-    const [editingUser, setEditingUser] = useState<User | null>(null);
-    const [studentCourseFilter, setStudentCourseFilter] = useState<string>('all');
-    const [confirmDelete, setConfirmDelete] = useState<{ type: 'course' | 'student' | 'user'; id: string; } | null>(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const studentFileInputRef = useRef<HTMLInputElement>(null);
-    const teacherFileInputRef = useRef<HTMLInputElement>(null);
-
-    if (!context) {
-        return <div className="p-8 text-center text-red-500">Lỗi nghiêm trọng: Không thể tải được dữ liệu ứng dụng.</div>;
+// --- HÀM HỖ TRỢ: Chuyển đổi an toàn sang Date ---
+const toDate = (value: any): Date | null => {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate();
+    if (typeof value === 'string' || typeof value === 'number') {
+        const date = new Date(value);
+        if (date && !isNaN(date.getTime())) {
+            return date;
+        }
     }
-    const { courses, students, users, addCourse, updateCourse, deleteCourse, addStudent, updateStudent, deleteStudent, addUser, updateUser, deleteUser } = context;
+    return null;
+};
 
-    const teachers = useMemo(() => (users || []).filter(u => u?.role === UserRole.TEACHER), [users]);
-    const otherUsers = useMemo(() => (users || []).filter(u => u && (u.role === UserRole.ADMIN || u.role === UserRole.MANAGER || u.role === UserRole.TEAM_LEADER)), [users]);
-    const filteredStudents = useMemo(() => {
-        if (!Array.isArray(students)) return [];
-        if (studentCourseFilter === 'all') return students;
-        return students.filter(s => s?.courseId === studentCourseFilter);
-    }, [students, studentCourseFilter]);
+// --- HÀM HỖ TRỢ: Tính toán thời lượng (giờ) ---
+const calculateDurationInHours = (start: any, end: any): number => {
+    const startDate = toDate(start);
+    const endDate = toDate(end);
+    if (!startDate || !endDate) return 0;
+    const durationMs = endDate.getTime() - startDate.getTime();
+    return durationMs / (1000 * 60 * 60);
+};
 
-    // === Các hàm xử lý (handle...) của bạn được giữ nguyên, tôi sẽ ẩn đi cho gọn ===
-    // ... handleFileUpload, handleEdit, handleCancelEdit, handleSubmit, handleDeleteRequest, ...
-    // ... confirmDeletion, getCourseDisplayString, handleTeacherCourseChange ...
-    // (Toàn bộ logic xử lý form của bạn vẫn ở đây, không thay đổi)
-        const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'student' | 'teacher') => {
-        const file = event.target.files?.[0];
-        if (!file) return;
 
-        setIsSubmitting(true);
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const data = new Uint8Array(e.target?.result as ArrayBuffer);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json = XLSX.utils.sheet_to_json(worksheet) as any[];
-
-                if (type === 'student') {
-                    // await batchAddStudents(json); // Giả sử hàm này tồn tại trong context
-                    alert('Chức năng nhập học viên đang được phát triển!');
-                } else if (type === 'teacher') {
-                    // await batchAddUsers(json); // Giả sử hàm này tồn tại trong context
-                    alert('Chức năng nhập giáo viên đang được phát triển!');
-                }
-            } catch (error: any) {
-                console.error("Lỗi khi xử lý file Excel:", error);
-                alert(`Lỗi: ${error.message}`);
-            } finally {
-                setIsSubmitting(false);
-                if (event.target) event.target.value = '';
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    };
-
-    const handleEdit = (type: 'course' | 'student' | 'user', item: any) => {
-        if (!item) return;
-        if (type === 'course') { setEditingCourse(item); setCourseForm(item); }
-        if (type === 'student') { setEditingStudent(item); setStudentForm(item); }
-        if (type === 'user') {
-            setEditingUser(item);
-            const { password, ...formData } = item;
-            if(item.role === UserRole.TEACHER) {
-                setTeacherForm(formData)
-            } else {
-                setUserForm(formData)
-            }
-        }
-    };
-
-    const handleCancelEdit = (type: string) => {
-        if (type === 'course') { setEditingCourse(null); setCourseForm(initialCourseForm); }
-        if (type === 'student') { setEditingStudent(null); setStudentForm(initialStudentForm); }
-        if (type === 'user') {
-            setEditingUser(null);
-            setUserForm(initialUserForm);
-            setTeacherForm(initialTeacherForm);
-        }
-    };
-    const handleSubmit = async (e: React.FormEvent, type: 'course' | 'student' | 'user', subType?: 'teacher' | 'manager') => {
-        e.preventDefault();
-        setIsSubmitting(true);
-
-        const isPhoneInUse = (phone: string, currentId?: string) =>
-            (users || []).some(user => user?.phone === phone && user.id !== currentId);
-
-        try {
-            let result: { success: boolean; message: string } | undefined;
-            switch (type) {
-                case 'user':
-                    const form = subType === 'teacher' ? teacherForm : userForm;
-                    if (isPhoneInUse(form.phone!, editingUser?.id)) {
-                        alert('LỖI: Số điện thoại này đã được một tài khoản khác sử dụng.');
-                        setIsSubmitting(false);
-                        return;
-                    }
-
-                    if (editingUser) {
-                        await updateUser({ ...editingUser, ...form });
-                    } else {
-                        if (!form.password || form.password.length < 6) {
-                            alert('Mật khẩu là bắt buộc và phải có ít nhất 6 ký tự.');
-                            setIsSubmitting(false);
-                            return;
-                        }
-                        result = await addUser(form as Omit<User, 'id'> & { password?: string });
-                    }
-                    break;
-                case 'student':
-                     if (!studentForm.courseId) {
-                        alert('Vui lòng chọn một khóa đào tạo.');
-                        setIsSubmitting(false);
-                        return;
-                    }
-                    if (editingStudent) {
-                        await updateStudent({ ...editingStudent, ...studentForm });
-                    } else {
-                        await addStudent(studentForm);
-                    }
-                    break;
-                case 'course':
-                    if (editingCourse) {
-                        await updateCourse({ ...editingCourse, ...courseForm });
-                    } else {
-                        await addCourse(courseForm);
-                    }
-                    break;
-            }
-            alert(result?.message || 'Thao tác thành công!');
-            handleCancelEdit(type);
-        } catch (error: any) {
-            console.error(`Lỗi khi đang ${editingUser || editingStudent || editingCourse ? 'cập nhật' : 'thêm'} ${type}:`, error);
-            alert(error.message || `Đã xảy ra lỗi khi lưu dữ liệu. Vui lòng thử lại.`);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-    const handleDeleteRequest = (type: 'course' | 'student' | 'user', id: string) => {
-        setConfirmDelete({ type, id });
-    };
-
-    const confirmDeletion = async () => {
-        if (!confirmDelete) return;
-        const { type, id } = confirmDelete;
-        try {
-            switch (type) {
-                case 'course': await deleteCourse(id); break;
-                case 'student': await deleteStudent(id); break;
-                case 'user': await deleteUser(id); break;
-            }
-        } catch (error: any) {
-            console.error(`Lỗi khi đang xóa ${type}:`, error);
-            alert(error.message || "Đã xảy ra lỗi khi xóa. Vui lòng thử lại.");
-        }
-        setConfirmDelete(null);
-    };
-
-    const getCourseDisplayString = (courseId: string) => {
-        const course = (courses || []).find(c => c?.id === courseId);
-        return course ? `${course.name ?? 'Lỗi tên'} - Khóa ${course.courseNumber ?? '?'}` : 'N/A';
-    };
-
-    const handleTeacherCourseChange = (courseId: string, isChecked: boolean) => {
-        const currentCourseIds = teacherForm.courseIds ?? [];
-        const newCourseIds = isChecked
-            ? [...currentCourseIds, courseId]
-            : currentCourseIds.filter(id => id !== courseId);
-        setTeacherForm({ ...teacherForm, courseIds: newCourseIds });
-    };
+// --- Modal Component for Details (Không thay đổi) ---
+const DetailModal = ({ isOpen, onClose, title, headers, data, onExport }) => {
+    if (!isOpen) return null;
 
     return (
-        <div className="p-4 md:p-6 lg:p-8 bg-gray-100 min-h-screen">
-            {confirmDelete && <ConfirmationModal message="Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa?" onConfirm={confirmDeletion} onCancel={() => setConfirmDelete(null)} />}
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Quản trị hệ thống</h2>
-
-            {/* === THAY ĐỔI 3: THÊM KHU VỰC NGHIỆP VỤ NÂNG CAO === */}
-            <div className="mb-8">
-                <h3 className="text-xl font-bold text-gray-700 mb-4">Nghiệp vụ & Báo cáo</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <ManagementCard
-                        title="Báo cáo Đối chiếu Điểm danh"
-                        description="So sánh và phát hiện sai lệch trong dữ liệu điểm danh giữa giáo viên và nhóm trưởng."
-                        onClick={() => setActiveScreen(Screen.RECONCILIATION_REPORT)}
-                        className="bg-teal-50 hover:bg-teal-100"
-                    />
-                    {/* Bạn có thể thêm các Card báo cáo khác ở đây trong tương lai */}
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center border-b pb-3 mb-4">
+                    <h3 className="font-bold text-xl text-gray-800">{title}</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
                 </div>
-            </div>
-
-
-            {/* === THAY ĐỔI 4: Giao diện quản lý được giữ nguyên và đặt trong các Card riêng biệt === */}
-            
-            {/* Courses Section */}
-            <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                {/* Phần code quản lý khóa học của bạn giữ nguyên */}
-                 <h3 className="text-xl font-bold mb-4">Danh sách khóa đào tạo</h3>
-                 <div className="space-y-2 mb-4 max-h-96 overflow-y-auto pr-2">
-                    {(courses ?? []).map(item => item && (
-                        <div key={item.id} className="flex justify-between items-center p-2 border rounded-lg">
-                            <span>{item.name} - Khóa {item.courseNumber}</span>
-                            <div>
-                                <button onClick={() => handleEdit('course', item)} className="bg-green-500 text-white px-3 py-1 rounded-lg mr-2" disabled={isSubmitting}>Sửa</button>
-                                <button onClick={() => handleDeleteRequest('course', item.id)} className="bg-red-500 text-white px-3 py-1 rounded-lg" disabled={isSubmitting}>Xóa</button>
-                            </div>
-                        </div>
-                    ))}
+                <div className="overflow-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>{headers.map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>)}</tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {data.length === 0 ? (
+                                <tr><td colSpan={headers.length} className="text-center py-4 text-gray-500">Không có dữ liệu chi tiết</td></tr>
+                            ) : data.map((row, index) => (
+                                <tr key={index}>
+                                    {headers.map(header => <td key={header} className="px-4 py-3 text-sm whitespace-nowrap">{String(row[header] ?? '')}</td>)}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
-                <form onSubmit={(e) => handleSubmit(e, 'course')} className="space-y-4 pt-4 border-t">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <input type="text" value={courseForm.name} onChange={e => setCourseForm({...courseForm, name: e.target.value})} placeholder="Tên khóa học" className="w-full p-2 border rounded" required/>
-                         <input type="number" value={courseForm.courseNumber} onChange={e => setCourseForm({...courseForm, courseNumber: parseInt(e.target.value) || 0})} placeholder="Số khóa" className="w-full p-2 border rounded" required/>
-                         <input type="text" onFocus={(e) => e.target.type='date'} onBlur={(e) => e.target.type='text'} value={courseForm.startDate} onChange={e => setCourseForm({...courseForm, startDate: e.target.value})} placeholder="Ngày bắt đầu" className="w-full p-2 border rounded" required/>
-                         <input type="text" onFocus={(e) => e.target.type='date'} onBlur={(e) => e.target.type='text'} value={courseForm.endDate} onChange={e => setCourseForm({...courseForm, endDate: e.target.value})} placeholder="Ngày kết thúc" className="w-full p-2 border rounded" required/>
-                    </div>
-                    <div className="text-right space-x-2">
-                        {editingCourse && <button type="button" onClick={() => handleCancelEdit('course')} className="bg-gray-500 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>Hủy Sửa</button>}
-                        <button type="submit" className="bg-primary text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>{editingCourse ? 'Cập nhật' : 'Thêm'}</button>
-                    </div>
-                </form>
-            </div>
-
-            {/* Students Section */}
-            <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                {/* Phần code quản lý học viên của bạn giữ nguyên */}
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold">Danh sách học viên</h3>
-                    <button onClick={() => studentFileInputRef.current?.click()} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors" disabled={isSubmitting}>Nhập từ Excel</button>
-                    <input type="file" ref={studentFileInputRef} onChange={(e) => handleFileUpload(e, 'student')} className="hidden" accept=".xlsx, .xls" />
+                <div className="flex justify-end mt-6 pt-4 border-t">
+                    <button onClick={onExport} className="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Xuất Excel</button>
+                    <button onClick={onClose} className="ml-3 bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Đóng</button>
                 </div>
-                <div className="mb-4">
-                    <select value={studentCourseFilter} onChange={e => setStudentCourseFilter(e.target.value)} className="w-full md:w-1/2 p-2 border rounded-md">
-                        <option value="all">Lọc theo khóa đào tạo: Tất cả</option>
-                        {(courses ?? []).map(course => course && <option key={course.id} value={course.id}>{getCourseDisplayString(course.id)}</option>)}
-                    </select>
-                </div>
-                 <div className="space-y-2 mb-4 max-h-96 overflow-y-auto pr-2">
-                    {(filteredStudents ?? []).map(student => student && (
-                        <div key={student.id} className="p-3 border rounded-lg">
-                           <p><b>{student.name}</b> - Nhóm: {student.group}</p>
-                           <p>Ngày sinh: {student.birthDate} - SĐT: {student.phone}</p>
-                           <p>Khóa: {getCourseDisplayString(student.courseId)}</p>
-                           <div className="text-right mt-2">
-                               <button onClick={() => handleEdit('student', student)} className="bg-green-500 text-white px-3 py-1 rounded-lg mr-2" disabled={isSubmitting}>Sửa</button>
-                               <button onClick={() => handleDeleteRequest('student', student.id)} className="bg-red-500 text-white px-3 py-1 rounded-lg" disabled={isSubmitting}>Xóa</button>
-                           </div>
-                        </div>
-                    ))}
-                </div>
-                <form onSubmit={(e) => handleSubmit(e, 'student')} className="space-y-4 pt-4 border-t">
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <input type="text" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} placeholder="Tên học viên" className="w-full p-2 border rounded" required />
-                        <input type="text" onFocus={(e) => e.target.type='date'} onBlur={(e) => e.target.type='text'} value={studentForm.birthDate} onChange={e => setStudentForm({...studentForm, birthDate: e.target.value})} placeholder="Ngày sinh" className="w-full p-2 border rounded" required />
-                        <input type="tel" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} placeholder="Số điện thoại" className="w-full p-2 border rounded" required />
-                        <input type="text" value={studentForm.group} onChange={e => setStudentForm({...studentForm, group: e.target.value})} placeholder="Nhóm" className="w-full p-2 border rounded" required />
-                        <select value={studentForm.courseId} onChange={e => setStudentForm({...studentForm, courseId: e.target.value})} className="w-full p-2 border rounded col-span-1 md:col-span-2 lg:col-span-3" required>
-                            <option value="">-- Chọn khóa đào tạo --</option>
-                            {(courses ?? []).map(course => course && <option key={course.id} value={course.id}>{getCourseDisplayString(course.id)}</option>)}
-                        </select>
-                    </div>
-                    <div className="text-right space-x-2">
-                        {editingStudent && <button type="button" onClick={() => handleCancelEdit('student')} className="bg-gray-500 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>Hủy Sửa</button>}
-                        <button type="submit" className="bg-primary text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>{editingStudent ? 'Cập nhật' : 'Thêm'}</button>
-                    </div>
-                </form>
-            </div>
-            
-            {/* Teachers Section */}
-            <div className="bg-white p-6 rounded-xl shadow-md mb-8">
-                {/* Phần code quản lý giáo viên của bạn giữ nguyên */}
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold">Danh sách giáo viên</h3>
-                     <button onClick={() => teacherFileInputRef.current?.click()} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors" disabled={isSubmitting}>Nhập từ Excel</button>
-                    <input type="file" ref={teacherFileInputRef} onChange={(e) => handleFileUpload(e, 'teacher')} className="hidden" accept=".xlsx, .xls" />
-                </div>
-                 <div className="space-y-3 mb-4 max-h-96 overflow-y-auto pr-2">
-                    {teachers.map(teacher => (
-                        <div key={teacher.id} className="p-3 border rounded-lg bg-gray-50">
-                           <p><b>{teacher.name}</b> - SĐT: {teacher.phone}</p>
-                           <p>Hình thức: {teacher.contractType} - Chuyên môn: {teacher.specialty}</p>
-                           <p className="font-medium mt-1">Các khóa phụ trách:</p>
-                           <div className="flex flex-wrap gap-1 mt-1">
-                                {(teacher.courseIds ?? []).length > 0 ? teacher.courseIds!.map(id => (
-                                    <span key={id} className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">{getCourseDisplayString(id)}</span>
-                                )) : <span className="text-sm text-gray-500">Chưa phân công</span>}
-                            </div>
-                           <div className="text-right mt-2">
-                               <button onClick={() => handleEdit('user', teacher)} className="bg-green-500 text-white px-3 py-1 rounded-lg mr-2" disabled={isSubmitting}>Sửa</button>
-                               <button onClick={() => handleDeleteRequest('user', teacher.id)} className="bg-red-500 text-white px-3 py-1 rounded-lg" disabled={isSubmitting}>Xóa</button>
-                           </div>
-                        </div>
-                    ))}
-                </div>
-                <form onSubmit={(e) => handleSubmit(e, 'user', 'teacher')} className="space-y-4 pt-4 border-t">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="text" value={teacherForm.name || ''} onChange={e => setTeacherForm({...teacherForm, name: e.target.value})} placeholder="Tên giáo viên" className="w-full p-2 border rounded" required/>
-                        <input type="tel" value={teacherForm.phone || ''} onChange={e => setTeacherForm({...teacherForm, phone: e.target.value})} placeholder="Số điện thoại (dùng để đăng nhập)" className="w-full p-2 border rounded" required/>
-                        {!editingUser && (
-                             <input type="password" value={teacherForm.password || ''} onChange={e => setTeacherForm({...teacherForm, password: e.target.value})} placeholder="Mật khẩu (ít nhất 6 ký tự)" className="w-full p-2 border rounded" required={!editingUser} />
-                        )}
-                        <select value={teacherForm.contractType} onChange={e => setTeacherForm({...teacherForm, contractType: e.target.value as TeacherContractType})} className="w-full p-2 border rounded">
-                            {Object.values(TeacherContractType).map(type => <option key={type} value={type}>{type}</option>)}
-                        </select>
-                        <select value={teacherForm.specialty} onChange={e => setTeacherForm({...teacherForm, specialty: e.target.value as TeacherSpecialty})} className="w-full p-2 border rounded">
-                            {Object.values(TeacherSpecialty).map(type => <option key={type} value={type}>{type}</option>)}
-                        </select>
-                    </div>
-                    <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Các khóa phụ trách</label>
-                        <div className="space-y-2 p-3 border rounded-md max-h-40 overflow-y-auto bg-gray-50">
-                            {(courses ?? []).length > 0 ? (courses ?? []).map(course => course && (
-                                <div key={`chk-${course.id}`} className="flex items-center">
-                                    <input id={`course-checkbox-${course.id}`} type="checkbox" checked={(teacherForm.courseIds ?? []).includes(course.id)} onChange={(e) => handleTeacherCourseChange(course.id, e.target.checked)} className="h-4 w-4 text-primary focus:ring-primary-dark border-gray-300 rounded" />
-                                    <label htmlFor={`course-checkbox-${course.id}`} className="ml-2 block text-sm text-gray-900">{getCourseDisplayString(course.id)}</label>
-                                </div>
-                            )) : <p className="text-sm text-gray-500">Chưa có khóa học nào để phân công.</p>}
-                        </div>
-                    </div>
-                    <div className="text-right space-x-2 pt-2">
-                        {editingUser && teacherForm.role === UserRole.TEACHER && <button type="button" onClick={() => handleCancelEdit('user')} className="bg-gray-500 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>Hủy Sửa</button>}
-                        <button type="submit" className="bg-primary text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>{editingUser && teacherForm.role === UserRole.TEACHER ? 'Cập nhật giáo viên' : 'Thêm giáo viên'}</button>
-                    </div>
-                </form>
-            </div>
-            
-            {/* Users Section (Managers/Admins/Team Leaders) */}
-            <div className="bg-white p-6 rounded-xl shadow-md">
-                {/* Phần code quản lý người dùng khác của bạn giữ nguyên */}
-                 <h3 className="text-xl font-bold mb-4">Danh sách Quản lý / Admin / Nhóm trưởng</h3>
-                 <div className="space-y-2 mb-4 max-h-72 overflow-y-auto pr-2">
-                    {otherUsers.map(item => (
-                        <div key={item.id} className="flex justify-between items-center p-2 border rounded-lg">
-                            <span>{item.name} - {item.role} (SĐT: {item.phone})</span>
-                            <div>
-                                <button onClick={() => handleEdit('user', item)} className="bg-green-500 text-white px-3 py-1 rounded-lg mr-2" disabled={isSubmitting}>Sửa</button>
-                                <button onClick={() => handleDeleteRequest('user', item.id)} className="bg-red-500 text-white px-3 py-1 rounded-lg" disabled={isSubmitting}>Xóa</button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                <form onSubmit={(e) => handleSubmit(e, 'user', 'manager')} className="space-y-4 pt-4 border-t">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="text" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} placeholder="Tên người dùng" className="w-full p-2 border rounded" required/>
-                        <input type="tel" value={userForm.phone} onChange={e => setUserForm({...userForm, phone: e.target.value})} placeholder="Số điện thoại (dùng để đăng nhập)" className="w-full p-2 border rounded" required/>
-                        {!editingUser && (
-                             <input type="password" value={userForm.password || ''} onChange={e => setUserForm({...userForm, password: e.target.value})} placeholder="Mật khẩu (ít nhất 6 ký tự)" className="w-full p-2 border rounded" required={!editingUser} />
-                        )}
-                        <select value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as UserRole})} className="w-full p-2 border rounded">
-                           <option value={UserRole.MANAGER}>Quản lý</option>
-                           <option value={UserRole.ADMIN}>Admin</option>
-                           <option value={UserRole.TEAM_LEADER}>Nhóm trưởng</option>
-                        </select>
-                    </div>
-                    <div className="text-right space-x-2">
-                        {editingUser && userForm.role !== UserRole.TEACHER && <button type="button" onClick={() => handleCancelEdit('user')} className="bg-gray-500 text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>Hủy Sửa</button>}
-                        <button type="submit" className="bg-primary text-white font-bold py-2 px-4 rounded-lg" disabled={isSubmitting}>{editingUser && userForm.role !== UserRole.TEACHER ? 'Cập nhật người dùng' : 'Thêm người dùng'}</button>
-                    </div>
-                </form>
             </div>
         </div>
     );
 };
 
-export default ManagementScreen;
+
+const ReportScreen: React.FC = () => {
+    const context = useContext(AppContext);
+    if (!context) return <div className="p-6">Đang tải dữ liệu...</div>;
+    const { courses, users, students, sessions, vehicles } = context as AppContextType;
+    
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [selectedCourseId, setSelectedCourseId] = useState('all');
+    const [dieselPrice, setDieselPrice] = useState(25000);
+    const [electricityPrice, setElectricityPrice] = useState(3000);
+    const [modalState, setModalState] = useState({ isOpen: false, title: '', headers: [], data: [], onExport: () => {} });
+
+    const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
+    
+    const getCourseDisplayString = (courseId: string) => {
+        const course = (courses || []).find(c => c.id === courseId);
+        return course ? `${course.name} - Khóa ${course.courseNumber}` : 'N/A';
+    };
+    const formatCurrency = (value: number) => !isNaN(value) ? value.toLocaleString('vi-VN') + ' VND' : '0 VND';
+    const formatDate = (date: any) => {
+        const d = toDate(date);
+        return d ? d.toLocaleDateString('vi-VN') : 'N/A';
+    }
+    
+    // --- BƯỚC 1: LỌC NGUỒN DỮ LIỆU CHÍNH - CHỈ LẤY BUỔI HỌC DO GIÁO VIÊN TẠO ---
+    const teacherCreatedSessions = useMemo(() => {
+        return (sessions || []).filter(session => session.createdBy === 'teacher');
+    }, [sessions]);
+
+    // --- BƯỚC 2: LỌC DỮ LIỆU THEO BỘ LỌC (NGÀY, KHÓA HỌC) ---
+    const filteredSessions = useMemo(() => {
+        const start = startDate ? toDate(startDate) : null;
+        const end = endDate ? toDate(endDate) : null;
+        if (end) { end.setHours(23, 59, 59, 999); }
+
+        return teacherCreatedSessions.filter(session => {
+            const sessionDate = toDate(session.startTimestamp);
+            if (!sessionDate) return false;
+            if (start && sessionDate < start) return false;
+            if (end && sessionDate > end) return false;
+            if (selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
+            return true;
+        });
+    }, [teacherCreatedSessions, startDate, endDate, selectedCourseId]);
+
+    // --- LOGIC BÁO CÁO GIÁO VIÊN ---
+    const teacherReportData = useMemo(() => {
+        const report: { [teacherId: string]: { teacher: User, totalHours: number } } = {};
+        teachers.forEach(t => { report[t.id] = { teacher: t, totalHours: 0 }; });
+
+        filteredSessions.forEach(session => {
+            if (report[session.teacherId]) {
+                const duration = calculateDurationInHours(session.startTimestamp, session.endTimestamp);
+                report[session.teacherId].totalHours += duration;
+            }
+        });
+
+        return Object.values(report)
+            .filter(item => item.totalHours > 0)
+            .sort((a, b) => b.totalHours - a.totalHours);
+    }, [filteredSessions, teachers]);
+
+    // --- LOGIC BÁO CÁO HỌC VIÊN ---
+    const studentReportData = useMemo(() => {
+        if (selectedCourseId === 'all') return [];
+        const courseStudents = (students || []).filter(s => s.courseId === selectedCourseId);
+        const courseSessions = teacherCreatedSessions.filter(s => s.courseId === selectedCourseId);
+        const totalLogicalSessions = courseSessions.length;
+        if (totalLogicalSessions === 0) return [];
+
+        return courseStudents.map(student => {
+            const attendedSessionsCount = courseSessions.filter(s => 
+                Array.isArray(s.attendees) && s.attendees.includes(student.id)
+            ).length;
+            const attendancePercentage = (attendedSessionsCount / totalLogicalSessions) * 100;
+            return { student, attendedSessions: attendedSessionsCount, totalSessions: totalLogicalSessions, attendancePercentage };
+        }).sort((a, b) => a.student.name.localeCompare(b.student.name));
+    }, [students, teacherCreatedSessions, selectedCourseId]);
+
+    // --- LOGIC BÁO CÁO CHI PHÍ (VIẾT LẠI HOÀN TOÀN THEO types.ts) ---
+    const costReportData = useMemo(() => {
+        if (selectedCourseId === 'all' || !users || !vehicles) return [];
+
+        let totalTeacherPayment = 0;
+        let totalDieselCost = 0;
+        let totalElectricityCost = 0;
+        
+        const courseSessions = filteredSessions.filter(s => s.courseId === selectedCourseId);
+
+        courseSessions.forEach(session => {
+            const duration = calculateDurationInHours(session.startTimestamp, session.endTimestamp);
+            if (duration <= 0) return;
+
+            // 1. Tính thù lao giáo viên
+            const teacher = users.find(u => u.id === session.teacherId);
+            if (teacher?.payment?.type === PaymentType.RATE && teacher.payment.rateUnit === RateUnit.HOUR) {
+                totalTeacherPayment += duration * teacher.payment.amount;
+            }
+
+            // 2. Tính chi phí nhiên liệu/điện
+            if (session.vehicleId) {
+                const vehicle = vehicles.find(v => v.id === session.vehicleId);
+                if (vehicle) {
+                    if (vehicle.fuelType === FuelType.DIESEL) {
+                        totalDieselCost += duration * vehicle.consumptionRate * dieselPrice;
+                    } else if (vehicle.fuelType === FuelType.ELECTRIC) {
+                        totalElectricityCost += duration * vehicle.consumptionRate * electricityPrice;
+                    }
+                }
+            }
+        });
+
+        return [
+            { id: 'cost_teacher_payment', description: 'Tổng thù lao giáo viên (theo giờ)', total: totalTeacherPayment },
+            { id: 'cost_diesel', description: 'Tổng chi phí nhiên liệu (Diesel)', total: totalDieselCost },
+            { id: 'cost_electricity', description: 'Tổng chi phí điện năng', total: totalElectricityCost },
+        ];
+    }, [filteredSessions, selectedCourseId, dieselPrice, electricityPrice, users, vehicles]);
+
+    const handleSummaryExport = (report: 'teacher' | 'student' | 'cost') => {
+        let summaryData: any[] = [];
+        let fileName = '';
+        if (report === 'teacher') {
+            fileName = 'TongHop_BaoCao_GiaoVien';
+            summaryData = teacherReportData.map((item, index) => ({
+                'STT': index + 1, 'Tên giáo viên': item.teacher.name, 'Tổng giờ dạy': item.totalHours.toFixed(2)
+            }));
+        } else if (report === 'student') {
+            fileName = 'TongHop_BaoCao_HocVien';
+            summaryData = studentReportData.map((item, index) => ({
+                'STT': index + 1, 'Tên học viên': item.student.name, 'Số buổi có mặt': item.attendedSessions, 'Tổng số buổi': item.totalSessions, 'Tỷ lệ tham gia (%)': item.attendancePercentage.toFixed(2)
+            }));
+        } else if (report === 'cost') {
+            fileName = 'TongHop_BaoCao_ChiPhi';
+            summaryData = costReportData.map((item, index) => ({
+                'STT': index + 1, 'Nội dung chi phí': item.description, 'Thành tiền': formatCurrency(item.total)
+            }));
+        }
+        exportExcel(summaryData, fileName, 'TongHop');
+    };
+    
+    // --- LOGIC XỬ LÝ MODAL CHI TIẾT (ĐÃ CẬP NHẬT) ---
+    const handleAction = (reportType: string, item: any) => {
+        let detailData: any[] = [];
+        let detailHeaders: string[] = [];
+        let detailTitle = '';
+
+        const courseSessionsInFilter = filteredSessions.filter(s => 
+            selectedCourseId === 'all' || s.courseId === selectedCourseId
+        );
+
+        switch (reportType) {
+            case 'teacher':
+                detailTitle = `Chi tiết giờ dạy: ${item.teacher.name}`;
+                detailHeaders = ['STT', 'Ngày', 'Khóa học', 'Nội dung', 'Loại buổi học', 'Thời lượng (giờ)'];
+                detailData = courseSessionsInFilter
+                    .filter(s => s.teacherId === item.teacher.id)
+                    .map((s, i) => ({
+                        'STT': i + 1,
+                        'Ngày': formatDate(s.startTimestamp),
+                        'Khóa học': getCourseDisplayString(s.courseId),
+                        'Nội dung': s.content,
+                        'Loại buổi học': s.type,
+                        'Thời lượng (giờ)': calculateDurationInHours(s.startTimestamp, s.endTimestamp).toFixed(2),
+                    }));
+                break;
+            
+            case 'student':
+                detailTitle = `Chi tiết điểm danh: ${item.student.name}`;
+                detailHeaders = ['STT', 'Ngày', 'Nội dung buổi học', 'Trạng thái'];
+                detailData = teacherCreatedSessions
+                   .filter(s => s.courseId === item.student.courseId)
+                   .map((s, i) => ({
+                       'STT': i + 1,
+                       'Ngày': formatDate(s.startTimestamp),
+                       'Nội dung buổi học': s.content,
+                       'Trạng thái': (s.attendees || []).includes(item.student.id) ? 'Có mặt' : 'Vắng mặt',
+                   }));
+                break;
+
+            case 'cost_teacher_payment':
+                detailTitle = 'Chi tiết thù lao giáo viên';
+                detailHeaders = ['STT', 'Ngày', 'Giáo viên', 'Thời lượng (giờ)', 'Đơn giá (VND/giờ)', 'Thành tiền (VND)'];
+                detailData = courseSessionsInFilter
+                    .map((s, i) => {
+                        const teacher = users.find(u => u.id === s.teacherId);
+                        const duration = calculateDurationInHours(s.startTimestamp, s.endTimestamp);
+                        const isApplicable = teacher?.payment?.type === PaymentType.RATE && teacher.payment.rateUnit === RateUnit.HOUR;
+                        const rate = isApplicable ? teacher.payment.amount : 0;
+                        const total = duration * rate;
+                        return {
+                            'STT': i + 1,
+                            'Ngày': formatDate(s.startTimestamp),
+                            'Giáo viên': teacher?.name || 'N/A',
+                            'Thời lượng (giờ)': duration.toFixed(2),
+                            'Đơn giá (VND/giờ)': rate.toLocaleString('vi-VN'),
+                            'Thành tiền (VND)': total.toLocaleString('vi-VN'),
+                        };
+                    })
+                    .filter(d => parseFloat(d['Thời lượng (giờ)']) > 0 && parseFloat(d['Thành tiền (VND)']) > 0); // Chỉ hiển thị các dòng có chi phí
+                break;
+
+            case 'cost_diesel':
+            case 'cost_electricity':
+                const fuelTypeTarget = reportType === 'cost_diesel' ? FuelType.DIESEL : FuelType.ELECTRIC;
+                detailTitle = `Chi tiết chi phí ${fuelTypeTarget}`;
+                detailHeaders = ['STT', 'Ngày', 'Phương tiện', 'Thời lượng (giờ)', 'Định mức', 'Tiêu thụ', 'Đơn giá', 'Thành tiền (VND)'];
+                detailData = courseSessionsInFilter
+                    .filter(s => s.vehicleId)
+                    .map((s, i) => {
+                        const vehicle = vehicles.find(v => v.id === s.vehicleId);
+                        if (!vehicle || vehicle.fuelType !== fuelTypeTarget) return null;
+                        
+                        const duration = calculateDurationInHours(s.startTimestamp, s.endTimestamp);
+                        const price = fuelTypeTarget === FuelType.DIESEL ? dieselPrice : electricityPrice;
+                        const consumption = duration * vehicle.consumptionRate;
+                        const total = consumption * price;
+
+                        return {
+                            'STT': i + 1,
+                            'Ngày': formatDate(s.startTimestamp),
+                            'Phương tiện': vehicle.name,
+                            'Thời lượng (giờ)': duration.toFixed(2),
+                            'Định mức': `${vehicle.consumptionRate} ${vehicle.consumptionUnit}`,
+                            'Tiêu thụ': `${consumption.toFixed(2)} ${vehicle.consumptionUnit.split('/')[0]}`,
+                            'Đơn giá': price.toLocaleString('vi-VN'),
+                            'Thành tiền (VND)': total.toLocaleString('vi-VN'),
+                        };
+                    })
+                    .filter(Boolean); // Lọc bỏ các giá trị null
+                break;
+        }
+
+        setModalState({
+            isOpen: true,
+            title: detailTitle,
+            headers: detailHeaders,
+            data: detailData,
+            onExport: () => exportExcel(detailData, detailTitle.replace(/ /g, '_'), 'ChiTiet')
+        });
+    };
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8 space-y-6 bg-gray-100 min-h-screen">
+            <h2 className="text-2xl font-bold text-gray-800">Các báo cáo tổng hợp</h2>
+            
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <h3 className="font-bold text-lg mb-4 text-gray-800">Lọc báo cáo</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md" title="Từ ngày"/>
+                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md" title="Đến ngày"/>
+                    <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md">
+                        <option value="all">Tất cả khóa đào tạo</option>
+                        {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            {/* --- BÁO CÁO GIÁO VIÊN --- */}
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-gray-800">Báo cáo giáo viên</h3>
+                    <button onClick={() => handleSummaryExport('teacher')} disabled={teacherReportData.length === 0} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Xuất Tổng hợp</button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">STT</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tên giáo viên</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng giờ dạy</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {teacherReportData.length === 0 ? (
+                                <tr><td colSpan={4} className="text-center py-4 text-gray-500">Không có dữ liệu</td></tr>
+                            ) : teacherReportData.map((item, index) => (
+                                <tr key={item.teacher.id}>
+                                    <td className="px-4 py-3 text-sm">{index + 1}</td>
+                                    <td className="px-4 py-3 text-sm">{item.teacher.name}</td>
+                                    <td className="px-4 py-3 text-sm">{item.totalHours.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-sm"><button onClick={() => handleAction('teacher', item)} className="text-indigo-600 hover:text-indigo-900">Chi tiết</button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            {/* --- BÁO CÁO HỌC VIÊN --- */}
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-gray-800">Báo cáo học viên</h3>
+                    <button onClick={() => handleSummaryExport('student')} disabled={selectedCourseId === 'all' || studentReportData.length === 0} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Xuất Tổng hợp</button>
+                </div>
+                {selectedCourseId === 'all' ? (
+                     <p className="text-sm text-center text-gray-500 py-4">Vui lòng chọn một khóa đào tạo cụ thể để xem báo cáo.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">STT</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tên học viên</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số buổi có mặt</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng số buổi</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tỷ lệ (%)</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {studentReportData.length === 0 ? (
+                                    <tr><td colSpan={6} className="text-center py-4 text-gray-500">Không có dữ liệu</td></tr>
+                                ) : studentReportData.map((item, index) => (
+                                    <tr key={item.student.id}>
+                                        <td className="px-4 py-3 text-sm">{index + 1}</td>
+                                        <td className="px-4 py-3 text-sm">{item.student.name}</td>
+                                        <td className="px-4 py-3 text-sm">{item.attendedSessions}</td>
+                                        <td className="px-4 py-3 text-sm">{item.totalSessions}</td>
+                                        <td className="px-4 py-3 text-sm">{item.attendancePercentage.toFixed(2)}%</td>
+                                        <td className="px-4 py-3 text-sm"><button onClick={() => handleAction('student', item)} className="text-indigo-600 hover:text-indigo-900">Chi tiết</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* --- BÁO CÁO CHI PHÍ --- */}
+             <div className="bg-white p-6 rounded-xl shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-gray-800">Báo cáo chi phí</h3>
+                    <button onClick={() => handleSummaryExport('cost')} disabled={selectedCourseId === 'all'} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Xuất Tổng hợp</button>
+                </div>
+                 {selectedCourseId === 'all' ? (
+                     <p className="text-sm text-center text-gray-500 py-4">Vui lòng chọn một khóa đào tạo cụ thể để xem báo cáo.</p>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Đơn giá Diesel (VND/lít)</label>
+                                <input type="number" value={dieselPrice} onChange={e => setDieselPrice(Number(e.target.value))} className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Đơn giá Điện (VND/kWh)</label>
+                                <input type="number" value={electricityPrice} onChange={e => setElectricityPrice(Number(e.target.value))} className="mt-1 w-full p-2 border border-gray-300 rounded-md"/>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nội dung chi phí</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thành tiền</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {costReportData.map((item) => (
+                                        <tr key={item.id}>
+                                            <td className="px-4 py-3 text-sm">{item.description}</td>
+                                            <td className="px-4 py-3 text-sm">{formatCurrency(item.total)}</td>
+                                            <td className="px-4 py-3 text-sm"><button onClick={() => handleAction(item.id, item)} className="text-indigo-600 hover:text-indigo-900">Chi tiết</button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+            
+            <DetailModal 
+                isOpen={modalState.isOpen}
+                onClose={() => setModalState({ isOpen: false, title: '', headers: [], data: [], onExport: () => {} })}
+                {...modalState}
+            />
+        </div>
+    );
+};
+
+export default ReportScreen;
