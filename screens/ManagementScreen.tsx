@@ -94,21 +94,21 @@ const ManagementScreen: React.FC<ManagementScreenProps> = ({ setActiveScreen }) 
         setIsSubmitting(true);
         try {
             if (type === 'course') {
-                if (editingCourse) await updateCourse(editingCourse.id, courseForm); else await addCourse(courseForm);
+                if (editingCourse) await updateCourse({ ...courseForm, id: editingCourse.id }); else await addCourse(courseForm);
                 handleCancelEdit('course');
             } else if (type === 'student') {
-                if (editingStudent) await updateStudent(editingStudent.id, studentForm); else await addStudent(studentForm);
+                if (editingStudent) await updateStudent({ ...studentForm, id: editingStudent.id }); else await addStudent(studentForm);
                 handleCancelEdit('student');
             } else if (type === 'user' && subType === 'teacher') {
                 const { password, ...teacherData } = teacherForm;
-                if (editingUser) await updateUser(editingUser.id, teacherData); else await addUser(teacherData as Omit<User, 'id'>, password);
+                if (editingUser) await updateUser({ ...teacherData, id: editingUser.id }); else await addUser({ ...teacherData, password } as Omit<User, 'id'> & { password?: string });
                 handleCancelEdit('teacher');
             } else if (type === 'user' && subType === 'manager') {
                 const { password, ...userData } = userForm;
-                if (editingUser) await updateUser(editingUser.id, userData); else await addUser(userData as Omit<User, 'id'>, password);
+                if (editingUser) await updateUser({ ...userData, id: editingUser.id }); else await addUser({ ...userData, password } as Omit<User, 'id'> & { password?: string });
                 handleCancelEdit('user');
             } else if (type === 'vehicle') {
-                if (editingVehicle) await updateVehicle(editingVehicle.id, vehicleForm); else await addVehicle(vehicleForm);
+                if (editingVehicle) await updateVehicle({ ...vehicleForm, id: editingVehicle.id }); else await addVehicle(vehicleForm);
                 handleCancelEdit('vehicle');
             }
         } catch (err) { console.error(`Lỗi khi lưu ${type}:`, err); alert(`Đã xảy ra lỗi, không thể lưu ${type}.`); }
