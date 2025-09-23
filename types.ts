@@ -24,18 +24,18 @@ export enum TeacherSpecialty {
 }
 
 export enum TeacherContractType {
-    FULL_TIME = 'Biên chế',
+    FULL_TIME = 'Cơ hữu',
     CONTRACT = 'Hợp đồng',
 }
 
 export enum PaymentType {
-    RATE = 'rate',
-    PACKAGE = 'package',
+    RATE = 'theo giờ/buổi',
+    PACKAGE = 'giao khoán',
 }
 
 export enum RateUnit {
-    HOUR = 'hour',
-    SESSION = 'session',
+    HOUR = 'giờ',
+    SESSION = 'buổi',
 }
 
 export enum FuelType {
