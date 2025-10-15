@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, ReactNode, useContext } from 'react';
-import { Course, Student, User, Session, UserRole } from '../types'; // Đảm bảo UserRole được import
+import { Course, Student, User, Session, UserRole, Vehicle } from '../types'; // Đảm bảo UserRole được import
 import { fetchDataFromCollection, addDocument, updateDocument, deleteDocument, getDocument } from '../services/firebaseService';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth } from '../firebase'; // Import auth từ file firebase.ts của bạn
@@ -16,6 +16,7 @@ export interface AppContextType {
     students: Student[] | null;
     users: User[] | null;
     sessions: Session[] | null;
+    vehicles: Vehicle[] | null;
     loading: boolean;
     error: Error | null;
 
@@ -42,10 +43,15 @@ export interface AppContextType {
     deleteUser: (id: string) => Promise<void>;
     batchAddUsers: (users: Partial<User>[]) => Promise<void>;
     
-    // Session actions - Chú ý: Signature đã thay đổi để tự động hóa
+    // Session actions
     addSession: (sessionData: Omit<Session, 'id' | 'creatorId' | 'createdBy'>) => Promise<void>;
     updateSession: (session: Session) => Promise<void>;
     deleteSession: (id: string) => Promise<void>;
+
+    // Vehicle actions
+    addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
+    updateVehicle: (vehicle: Vehicle) => Promise<void>;
+    deleteVehicle: (id: string) => Promise<void>;
 }
 
 // --- KHỞI TẠO CONTEXT --- //
@@ -69,22 +75,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [students, setStudents] = useState<Student[] | null>(null);
     const [users, setUsers] = useState<User[] | null>(null);
     const [sessions, setSessions] = useState<Session[] | null>(null);
+    const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<Error | null>(null);
 
     // === XỬ LÝ XÁC THỰC (AUTH) ===
     useEffect(() => {
-        // Lắng nghe sự thay đổi trạng thái đăng nhập của người dùng
         const unsubscribe = onAuthStateChanged(auth, async (userAuth) => {
             if (userAuth) {
-                // Người dùng đã đăng nhập, lấy thông tin chi tiết từ collection 'users'
                 try {
                     const userProfile = await getDocument<User>('users', userAuth.uid);
                     if (userProfile) {
                         setCurrentUser({ ...userProfile, id: userAuth.uid });
-                        await fetchData(); // Tải dữ liệu chính sau khi đã có user
+                        await fetchData();
                     } else {
-                        // Trường hợp hiếm: có auth user nhưng không có profile trong DB
                         setCurrentUser(null);
                     }
                 } catch (err) {
@@ -92,40 +96,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     setCurrentUser(null);
                 }
             } else {
-                // Người dùng đã đăng xuất
                 setCurrentUser(null);
             }
-            setAuthLoading(false); // Hoàn tất kiểm tra auth ban đầu
+            setAuthLoading(false);
         });
 
-        return () => unsubscribe(); // Hủy lắng nghe khi component unmount
+        return () => unsubscribe();
     }, []);
 
     const logout = async () => {
         await signOut(auth);
-        // Reset tất cả state
         setCurrentUser(null);
         setCourses(null);
         setStudents(null);
         setUsers(null);
         setSessions(null);
+        setVehicles(null);
     };
 
     // --- TẢI DỮ LIỆU BAN ĐẦU --- //
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [coursesData, studentsData, usersData, sessionsData] = await Promise.all([
+            const [coursesData, studentsData, usersData, sessionsData, vehiclesData] = await Promise.all([
                 fetchDataFromCollection<Course>('courses'),
                 fetchDataFromCollection<Student>('students'),
                 fetchDataFromCollection<User>('users'),
                 fetchDataFromCollection<Session>('sessions'),
+                fetchDataFromCollection<Vehicle>('vehicles'),
             ]);
             
             setCourses(coursesData);
             setStudents(studentsData);
             setUsers(usersData);
             setSessions(sessionsData);
+            setVehicles(vehiclesData);
             setError(null);
         } catch (e: any) {
             console.error("Lỗi khi tải dữ liệu từ Firestore:", e);
@@ -135,102 +140,102 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     };
     
-    // --- Quản lý Buổi học (Sessions) - ĐÃ CẬP NHẬT --- //
+    // --- CRUD Operations --- //
+
+    // Generic function to add a document and update state
+    const addDataItem = async <T extends {id: string}>(collection: string, data: Omit<T, 'id'>, setter: React.Dispatch<React.SetStateAction<T[] | null>>) => {
+        const newDoc = await addDocument<T>(collection, data);
+        const newItem = { ...data, id: newDoc.id } as T;
+        setter(prev => (prev ? [...prev, newItem] : [newItem]));
+        return newItem;
+    };
+    
+    // Generic function to update a document and update state
+    const updateDataItem = async <T extends {id: string}>(collection: string, item: T, setter: React.Dispatch<React.SetStateAction<T[] | null>>) => {
+        await updateDocument<T>(collection, item.id, item);
+        setter(prev => prev ? prev.map(d => d.id === item.id ? item : d) : null);
+    };
+
+    // Generic function to delete a document and update state
+    const deleteDataItem = async (collection: string, id: string, setter: React.Dispatch<React.SetStateAction<any[] | null>>) => {
+        await deleteDocument(collection, id);
+        setter(prev => prev ? prev.filter(d => d.id !== id) : null);
+    };
+
+    // Courses
+    const addCourse = (course: Omit<Course, 'id'>) => addDataItem('courses', course, setCourses);
+    const updateCourse = (course: Course) => updateDataItem('courses', course, setCourses);
+    const deleteCourse = (id: string) => deleteDataItem('courses', id, setCourses);
+
+    // Students
+    const addStudent = (student: Omit<Student, 'id'>) => addDataItem('students', student, setStudents);
+    const updateStudent = (student: Student) => updateDataItem('students', student, setStudents);
+    const deleteStudent = (id: string) => deleteDataItem('students', id, setStudents);
+
+    // Vehicles
+    const addVehicle = (vehicle: Omit<Vehicle, 'id'>) => addDataItem('vehicles', vehicle, setVehicles);
+    const updateVehicle = (vehicle: Vehicle) => updateDataItem('vehicles', vehicle, setVehicles);
+    const deleteVehicle = (id: string) => deleteDataItem('vehicles', id, setVehicles);
+    
+    // Sessions
     const addSession = async (sessionData: Omit<Session, 'id' | 'creatorId' | 'createdBy'>) => {
-        if (!currentUser) {
-            throw new Error("Người dùng chưa đăng nhập. Không thể tạo buổi học.");
-        }
-        
-        // Tự động thêm thông tin người tạo vào buổi học
+        if (!currentUser) throw new Error("Người dùng chưa đăng nhập.");
         const newSessionData: Omit<Session, 'id'> = {
             ...sessionData,
             creatorId: currentUser.id,
             createdBy: currentUser.role === UserRole.TEACHER ? 'teacher' : 'team_leader',
         };
-
-        const newDoc = await addDocument<Session>('sessions', newSessionData);
-        // Cập nhật state local để UI phản hồi ngay lập tức
-        setSessions(prev => (prev ? [...prev, { ...newSessionData, id: newDoc.id }] : [{ ...newSessionData, id: newDoc.id }]));
+        await addDataItem('sessions', newSessionData, setSessions);
     };
-
-    const updateSession = async (session: Session) => {
-        await updateDocument<Session>('sessions', session.id, session);
-        // Cập nhật state local
-        setSessions(prev => prev ? prev.map(s => s.id === session.id ? session : s) : null);
-    };
-
-    const deleteSession = async (id: string) => {
-        await deleteDocument('sessions', id);
-        // Cập nhật state local
-        setSessions(prev => prev ? prev.filter(s => s.id !== id) : null);
-    };
-
-    // --- CÁC HÀM KHÁC (ĐÃ TỐI ƯU HÓA) --- //
-    // ... (Phần còn lại giữ nguyên logic nhưng tối ưu bằng cách cập nhật state local) ...
-    // Ví dụ cho addCourse:
-    const addCourse = async (course: Omit<Course, 'id'>) => {
-        const newDoc = await addDocument<Course>('courses', course);
-        setCourses(prev => prev ? [...prev, { ...course, id: newDoc.id }] : [{ ...course, id: newDoc.id }]);
-    };
-    // ... (Bạn có thể áp dụng tương tự cho các hàm update/delete của Course, Student, User) ...
-
-    // --- CÁC HÀM CŨ CHƯA TỐI ƯU (GIỮ LẠI ĐỂ ĐẢM BẢO TÍNH TOÀN VẸN) --- //
-    const updateUser = async (user: Partial<User> & { id: string }) => {
-        await updateDocument<User>('users', user.id, user);
-        fetchData();
-    };
-    const deleteUser = async (id: string) => {
-        const functions = getFunctions();
-        const callDeleteUser = httpsCallable(functions, 'deleteUser');
-        try {
-            await callDeleteUser({ uid: id });
-            await fetchData();
-        } catch (error: any) {
-             console.error("Lỗi khi gọi Cloud Function 'deleteUser':", error);
-            throw new Error(error.message || "Đã có lỗi xảy ra khi xóa người dùng.");
-        }
-    };
-    const updateCourse = async (course: Course) => {
-        await updateDocument<Course>('courses', course.id, course);
-        fetchData();
-    };
-    const deleteCourse = async (id: string) => {
-        await deleteDocument('courses', id);
-        fetchData();
-    };
-    const addStudent = async (student: Omit<Student, 'id'>) => {
-        await addDocument<Student>('students', student);
-        fetchData();
-    };
-    const updateStudent = async (student: Student) => {
-        await updateDocument<Student>('students', student.id, student);
-        fetchData();
-    };
-    const deleteStudent = async (id: string) => {
-        await deleteDocument('students', id);
-        fetchData();
-    };
-     const addUser = async (user: Omit<User, 'id'>) => {
+    const updateSession = (session: Session) => updateDataItem('sessions', session, setSessions);
+    const deleteSession = (id: string) => deleteDataItem('sessions', id, setSessions);
+    
+    // Users (Special Handling for Firebase Auth)
+    const addUser = async (user: Omit<User, 'id'> & { password?: string }) => {
         const functions = getFunctions();
         const callCreateUser = httpsCallable(functions, 'createUser');
         try {
-            const result = await callCreateUser(user);
-            await fetchData(); 
-            return { success: true, message: (result.data as any).message };
+            const result = await callCreateUser(user) as any;
+            if (result.data.success && result.data.uid) {
+                const newUser = { ...user, id: result.data.uid };
+                // Remove password before adding to state
+                delete newUser.password;
+                setUsers(prev => (prev ? [...prev, newUser as User] : [newUser as User]));
+            }
+            return { success: result.data.success, message: result.data.message };
         } catch (error: any) {
             console.error("Lỗi khi gọi Cloud Function 'createUser':", error);
             return { success: false, message: error.message || "Đã có lỗi xảy ra khi tạo người dùng." };
         }
     };
+    
+    const updateUser = async (user: Partial<User> & { id: string }) => {
+        await updateDocument<User>('users', user.id, user);
+        setUsers(prev => prev ? prev.map(u => u.id === user.id ? { ...u, ...user } : u) : null);
+    };
+
+    const deleteUser = async (id: string) => {
+        const functions = getFunctions();
+        const callDeleteUser = httpsCallable(functions, 'deleteUser');
+        try {
+            await callDeleteUser({ uid: id });
+            setUsers(prev => prev ? prev.filter(u => u.id !== id) : null);
+        } catch (error: any) {
+             console.error("Lỗi khi gọi Cloud Function 'deleteUser':", error);
+            throw new Error(error.message || "Đã có lỗi xảy ra khi xóa người dùng.");
+        }
+    };
+
     const batchAddUsers = async (users: Partial<User>[]) => {
+        // This could be further optimized with a dedicated backend function
         const promises = users.map(user => addUser(user as Omit<User, 'id'>));
         await Promise.all(promises);
-        await fetchData();
     };
+
     const batchAddStudents = async (students: Partial<Student>[]) => {
+        // This could be further optimized
         const promises = students.map(student => addStudent(student as Omit<Student, 'id'>));
         await Promise.all(promises);
-        await fetchData();
     };
 
     // --- GIÁ TRỊ CONTEXT ĐƯỢC CUNG CẤP --- //
@@ -241,6 +246,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         students,
         users,
         sessions,
+        vehicles,
         loading,
         error,
         fetchData,
@@ -259,6 +265,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addSession,
         updateSession,
         deleteSession,
+        addVehicle,
+        updateVehicle,
+        deleteVehicle
     };
 
     return (
