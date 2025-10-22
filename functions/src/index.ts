@@ -1,9 +1,94 @@
 
 import * as admin from "firebase-admin";
+import {defineSecret} from "firebase-functions/params";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 
 // Khởi tạo Admin SDK
 admin.initializeApp();
+
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
+
+interface GeminiHistoryPart {
+    text: string;
+}
+
+interface GeminiHistoryEntry {
+    role: "user" | "model";
+    parts: GeminiHistoryPart[];
+}
+
+interface GeminiGenerateContentResponse {
+    candidates?: Array<{
+        content?: {
+            parts?: Array<{text?: string}>;
+        };
+    }>;
+}
+
+const sanitizeHistory = (history: unknown): GeminiHistoryEntry[] => {
+    if (!Array.isArray(history)) {
+        return [];
+    }
+
+    return history
+        .map((entry) => {
+            if (typeof entry !== "object" || entry === null) {
+                return null;
+            }
+
+            const role = (entry as {role?: unknown}).role;
+            if (role !== "user" && role !== "model") {
+                return null;
+            }
+
+            const parts = Array.isArray((entry as {parts?: unknown}).parts)
+                ? (entry as {parts?: unknown}).parts as unknown[]
+                : [];
+
+            const sanitizedParts = parts
+                .map((part) => {
+                    if (typeof part !== "object" || part === null) {
+                        return null;
+                    }
+                    const text = (part as {text?: unknown}).text;
+                    if (typeof text !== "string" || text.trim().length === 0) {
+                        return null;
+                    }
+                    return {text};
+                })
+                .filter((part): part is GeminiHistoryPart => part !== null);
+
+            if (sanitizedParts.length === 0) {
+                return null;
+            }
+
+            return {
+                role,
+                parts: sanitizedParts,
+            } satisfies GeminiHistoryEntry;
+        })
+        .filter((entry): entry is GeminiHistoryEntry => entry !== null)
+        .slice(-10);
+};
+
+const extractGeminiText = (payload: GeminiGenerateContentResponse): string | null => {
+    if (!payload.candidates || payload.candidates.length === 0) {
+        return null;
+    }
+
+    for (const candidate of payload.candidates) {
+        const candidateText = candidate?.content?.parts
+            ?.map((part) => part?.text ?? "")
+            .join("")
+            .trim();
+
+        if (candidateText) {
+            return candidateText;
+        }
+    }
+
+    return null;
+};
 
 export enum UserRole {
     ADMIN = 'Admin',
@@ -137,6 +222,81 @@ export const createUser = onCall(async (request) => {
       "internal",
       "Đã có lỗi xảy ra trên máy chủ khi tạo người dùng.",
       error
+    );
+  }
+});
+
+export const generateGeminiContent = onCall({secrets: [GEMINI_API_KEY]}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Bạn phải đăng nhập để sử dụng trợ lý AI."
+    );
+  }
+
+  const promptInput = (request.data ?? {}).prompt;
+  const prompt = typeof promptInput === "string" ? promptInput.trim() : "";
+
+  if (!prompt) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Prompt phải là một chuỗi ký tự không rỗng."
+    );
+  }
+
+  const history = sanitizeHistory((request.data ?? {}).history);
+
+  const contents = [
+    ...history,
+    {role: "user", parts: [{text: prompt}]},
+  ];
+
+  try {
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY.value(),
+        },
+        body: JSON.stringify({
+          contents,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Gemini API request failed:", errorText);
+      throw new HttpsError(
+        "internal",
+        "Gemini API trả về lỗi. Vui lòng thử lại sau."
+      );
+    }
+
+    const payload = await response.json() as GeminiGenerateContentResponse;
+    const text = extractGeminiText(payload);
+
+    if (!text) {
+      console.error("Gemini API did not return a valid text response:", payload);
+      throw new HttpsError(
+        "internal",
+        "Không nhận được phản hồi hợp lệ từ Gemini."
+      );
+    }
+
+    return {
+      text,
+    };
+  } catch (error) {
+    console.error("Unexpected error while calling Gemini API:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError(
+      "internal",
+      "Không thể kết nối tới Gemini API. Vui lòng thử lại sau."
     );
   }
 });
