@@ -3,6 +3,16 @@
 Tài liệu này mô tả cách áp dụng thay đổi đã đề xuất để bảo mật khóa Gemini API bằng Cloud Functions và đẩy chúng lên GitHub.
 
 ## 1. Chuẩn bị
+
+### 1.1. Chọn cách sao chép bản vá từ giao diện chat
+
+Khi nhấn vào dấu ba chấm ở góc câu trả lời của trợ lý, bạn sẽ thấy hai lựa chọn giống hình minh họa:
+
+- **Sao chép lệnh áp dụng thay đổi**: Dán nguyên cụm vào terminal, lệnh sẽ tạo file tạm, áp dụng diff và dọn dẹp giúp bạn. Cách này thân thiện nếu bạn quen thao tác bằng dòng lệnh.
+- **Sao chép bản vá**: Nhận về đoạn diff chuẩn `git`. Bạn có thể lưu vào file `.patch` rồi chạy `git apply <file.patch>` hoặc dán trực tiếp vào lệnh `git apply` để xem và áp dụng thủ công.
+
+Bạn có thể chọn **một trong hai** tùy thói quen. Nếu chưa từng dùng `git apply`, hãy ưu tiên **Sao chép lệnh áp dụng thay đổi** vì nó bao gồm đầy đủ các bước sẵn có.
+
 - Cài đặt `firebase-tools` và `npm` trên máy của bạn.
 - Đảm bảo bạn đã đăng nhập Firebase (`firebase login`) và có quyền truy cập repo GitHub.
 - Sao chép repo về máy nếu chưa có: `git clone <url_repo>` rồi `cd <repo>`.
