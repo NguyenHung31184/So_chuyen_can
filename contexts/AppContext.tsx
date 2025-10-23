@@ -4,6 +4,7 @@ import { fetchDataFromCollection, addDocument, updateDocument, deleteDocument, g
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth } from '../firebase'; // Import auth từ file firebase.ts của bạn
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { validateSessionSchedule } from '../utils/sessionValidation';
 
 // --- ĐỊNH NGHĨA TYPE CHO CONTEXT --- //
 export interface AppContextType {
@@ -177,6 +178,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updateVehicle = (vehicle: Vehicle) => updateDataItem('vehicles', vehicle, setVehicles);
     const deleteVehicle = (id: string) => deleteDataItem('vehicles', id, setVehicles);
     
+    const ensureSessionValidationContext = () => {
+        if (!courses || !sessions) {
+            throw new Error('Dữ liệu khóa học hoặc buổi học chưa sẵn sàng.');
+        }
+        const courseList = courses;
+        const sessionList = sessions;
+        return { courses: courseList, sessions: sessionList };
+    };
+
     // Sessions
     const addSession = async (sessionData: Omit<Session, 'id' | 'creatorId' | 'createdBy'>) => {
         if (!currentUser) throw new Error("Người dùng chưa đăng nhập.");
@@ -185,9 +195,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             creatorId: currentUser.id,
             createdBy: currentUser.role === UserRole.TEACHER ? 'teacher' : 'team_leader',
         };
+
+        const { courses: courseList, sessions: sessionList } = ensureSessionValidationContext();
+        validateSessionSchedule(newSessionData, { courses: courseList, sessions: sessionList });
+
         await addDataItem('sessions', newSessionData, setSessions);
     };
-    const updateSession = (session: Session) => updateDataItem('sessions', session, setSessions);
+    const updateSession = async (session: Session) => {
+        const { courses: courseList, sessions: sessionList } = ensureSessionValidationContext();
+        validateSessionSchedule(session, { courses: courseList, sessions: sessionList });
+        await updateDataItem('sessions', session, setSessions);
+    };
     const deleteSession = (id: string) => deleteDataItem('sessions', id, setSessions);
     
     // Users (Special Handling for Firebase Auth)

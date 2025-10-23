@@ -19,6 +19,7 @@ import ReportScreen from './screens/ReportScreen';
 import ManagementScreen from './screens/ManagementScreen';
 import BottomNav from './components/BottomNav';
 import ReconciliationReportScreen from './screens/ReconciliationReportScreen';
+import { validateSessionSchedule } from './utils/sessionValidation';
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -141,6 +142,16 @@ const App: React.FC = () => {
         await deleteDoc(doc(db, collectionName, docId));
     };
 
+    const handleAddSession = async (session: Omit<Session, 'id'>) => {
+        validateSessionSchedule(session, { courses, sessions });
+        await handleAddDoc("schedules")(session);
+    };
+
+    const handleUpdateSession = async (session: Session) => {
+        validateSessionSchedule(session, { courses, sessions });
+        await handleUpdateDoc("schedules")(session);
+    };
+
     const appContextValue: AppContextType | null = useMemo(() => {
         if (dataLoading) return null;
         return {
@@ -151,8 +162,8 @@ const App: React.FC = () => {
             sessions,
             weeklyPlans,
             vehicles,
-            addSession: handleAddDoc("schedules"),
-            updateSession: handleUpdateDoc("schedules"),
+            addSession: handleAddSession,
+            updateSession: handleUpdateSession,
             deleteSession: handleDeleteDoc("schedules"),
             addCourse: handleAddDoc("courses"),
             updateCourse: handleUpdateDoc("courses"),
