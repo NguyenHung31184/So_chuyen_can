@@ -1,0 +1,86 @@
+[debug] [2025-10-22T16:06:42.341Z] ----------------------------------------------------------------------
+[debug] [2025-10-22T16:06:42.343Z] Command:       /nix/store/ws50yvm6vzlzf7jzz6n7xh4szddrack1-nodejs-20.19.1/bin/node /nix/store/i78h9v2gl6qg2w9646hi06syn3hbv4kj-firebase-tools-14.19.1/lib/node_modules/firebase-tools/lib/bin/firebase.js functions:shell
+[debug] [2025-10-22T16:06:42.344Z] CLI Version:   14.19.1
+[debug] [2025-10-22T16:06:42.344Z] Platform:      linux
+[debug] [2025-10-22T16:06:42.344Z] Node Version:  v20.19.1
+[debug] [2025-10-22T16:06:42.344Z] Time:          Wed Oct 22 2025 16:06:42 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-10-22T16:06:42.345Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-10-22T16:06:42.805Z] Checked if tokens are valid: false, expires at: 1761149943983
+[debug] [2025-10-22T16:06:42.806Z] Checked if tokens are valid: false, expires at: 1761149943983
+[debug] [2025-10-22T16:06:42.806Z] > refreshing access token with scopes: []
+[debug] [2025-10-22T16:06:42.809Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-10-22T16:06:42.809Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-10-22T16:06:42.929Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-10-22T16:06:42.929Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-10-22T16:06:42.946Z] >>> [apiv2][query] GET https://monospace-pa.googleapis.com/v1/workspaces/s-chuyn-cn-27949961 [none]
+[debug] [2025-10-22T16:06:44.030Z] <<< [apiv2][status] GET https://monospace-pa.googleapis.com/v1/workspaces/s-chuyn-cn-27949961 200
+[debug] [2025-10-22T16:06:44.030Z] <<< [apiv2][body] GET https://monospace-pa.googleapis.com/v1/workspaces/s-chuyn-cn-27949961 {"workspaceId":"s-chuyn-cn-27949961","name":"Sổ chuyên cần","workspaceRedirectUrl":"firebase-s-chuyn-cn-1757032755589.cluster-osvg2nzmmzhzqqjio6oojllbg4.cloudworkstations.dev","status":"WORKSPACE_STATUS_RUNNING","lastAccessDatetime":"2025-10-22T14:24:47.131862Z","workspaceTemplate":"WORKSPACE_TEMPLATE_BLANK_WEB","owner":"SELF","serviceAccountEmail":"msp-8944742072647446238@monospace-per-ws-sa-9.iam.gserviceaccount.com","enableNix":true,"ownerEmail":"QuangHungchp31184@gmail.com","templateArgs":"{\"signedUrl\":\"https://monospace-local-import-bucket-us.storage.googleapis.com/s-chuyn-cn-27949961-s%25E1%25BB%2595-chuy%25C3%25AAn-c%25E1%25BA%25A7n-%25C4%2591i%25E1%25BB%2587n-t%25E1%25BB%25AD.zip?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=monospace-local-import-manager%40monospace-local-import-bucket.iam.gserviceaccount.com%2F20250905%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20250905T003914Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&x-goog-signature=4b416489b2357b59504a9d22d85911e19da970c78adcc0ae74b81dc0014531c12399827fb765604ee45ae081ab2a7ff045712051f27487ba5c4ff6fc38889326f64a97cb9e12fdc2b8097b92e2d1d470c39ea2c0e932b679e9f3a9e7a4cc99e5fb5fcc40b956c1af21500cf622137c07ef6477d02c735ce9e30b06b89be7bb2160147757ffe3290001eb56cbae4d06968f1a56c60d98b95d1d99303d3977d8fb2ce1f5173f201c477b7bdb8380867e9c18f979de82c39a0638a0197e042e8272dabe40d0c65a8948a5312fd23af615041d25879df336fff069251e38a5e1e09b6a9f5b34ae6332ada871f3f0368d9b95610ef17c12cfb813a3bbd75747603a6f\"}","templateRepoUrl":"file:///usr/local/monospace/templates/private/_local_import","workstationAccessToken":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2Nsb3VkLmdvb2dsZS5jb20vd29ya3N0YXRpb25zIiwiYXVkIjoiZmlyZWJhc2Utcy1jaHV5bi1jbi0xNzU3MDMyNzU1NTg5LmNsdXN0ZXItb3N2ZzJuem1temh6cXFqaW82b29qbGxiZzQuY2xvdWR3b3Jrc3RhdGlvbnMuZGV2IiwiaWF0IjoxNzYxMTQ5MjAzLCJleHAiOjE3NjEyMzU2MDN9.alMCHfvdb6E3LGOp6k5tnGtOLbeZL7HsVKdIiLHrZHkVrlegMfroqupl_r_1MgD4z0KsSda_28t6De1pyUtOouyDVjB1JtekBdQZX3nuoKpmIoEEqtApYxftWRYVQj_ycGtIMO_WC-jJ27ipwfA755lxbIB39TNLw0WoSLv7nljCNgCaxrYvZtfRAOLbMmT7osTSqO7Z-shCSfUgLjO_9WY6wX8KdRW5cF48k2xle0k1x7tZp8mM7MTy48nBKXXDSuO62r1tL-ynypbtVn_eJo8hFeC4_icS4zw2bIt0N8_EVvAT9m-cxXqMju61UEy0q6bkNpsi1HnvpO-cwZThoQ","firebaseProjectId":"so-theo-doi-dien-tu"}
+[debug] [2025-10-22T16:06:44.032Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform","https://www.googleapis.com/auth/userinfo.email"]
+[debug] [2025-10-22T16:06:44.032Z] > authorizing via signed-in user (quanghungchp31184@gmail.com)
+[debug] [2025-10-22T16:06:44.033Z] [iam] checking project so-theo-doi-dien-tu for permissions ["firebase.projects.get"]
+[debug] [2025-10-22T16:06:44.033Z] Checked if tokens are valid: true, expires at: 1761152801929
+[debug] [2025-10-22T16:06:44.034Z] Checked if tokens are valid: true, expires at: 1761152801929
+[debug] [2025-10-22T16:06:44.034Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/so-theo-doi-dien-tu:testIamPermissions [none]
+[debug] [2025-10-22T16:06:44.034Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/so-theo-doi-dien-tu:testIamPermissions x-goog-quota-user=projects/so-theo-doi-dien-tu
+[debug] [2025-10-22T16:06:44.034Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/so-theo-doi-dien-tu:testIamPermissions {"permissions":["firebase.projects.get"]}
+[debug] [2025-10-22T16:06:44.792Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/so-theo-doi-dien-tu:testIamPermissions 200
+[debug] [2025-10-22T16:06:44.793Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/so-theo-doi-dien-tu:testIamPermissions {"permissions":["firebase.projects.get"]}
+[debug] [2025-10-22T16:06:44.794Z] Emulator locator file path: /tmp/hub-so-theo-doi-dien-tu.json
+[warn] ⚠  functions: Error when trying to check port 5002 on ::1: Error: listen EADDRNOTAVAIL: address not available ::1:5002 {"metadata":{"emulator":{"name":"functions"},"message":"Error when trying to check port 5002 on ::1: Error: listen EADDRNOTAVAIL: address not available ::1:5002"}}
+[warn] ⚠  functions: Port 5000 is available on 127.0.0.1 but not ::1. This may cause issues with some clients. {"metadata":{"emulator":{"name":"functions"},"message":"Port 5000 is available on 127.0.0.1 but not ::1. This may cause issues with some clients."}}
+[warn] ⚠  functions: If you encounter connectivity issues, consider switching to a different port or explicitly specifying "host": "<ip address>" instead of hostname in firebase.json {"metadata":{"emulator":{"name":"functions"},"message":"If you encounter connectivity issues, consider switching to a different port or explicitly specifying \"host\": \"<ip address>\" instead of hostname in firebase.json"}}
+[warn] ⚠  functions: Functions Emulator unable to start on port 5000, starting on 5002 instead. {"metadata":{"emulator":{"name":"functions"},"message":"Functions Emulator unable to start on port 5000, starting on 5002 instead."}}
+[warn] ⚠  functions: Application Default Credentials detected. Non-emulated services will access production using these credentials. Be careful! {"metadata":{"emulator":{"name":"functions"},"message":"Application Default Credentials detected. Non-emulated services will access production using these credentials. Be careful!"}}
+[debug] [2025-10-22T16:06:47.878Z] Checked if tokens are valid: true, expires at: 1761152801929
+[debug] [2025-10-22T16:06:47.880Z] Checked if tokens are valid: true, expires at: 1761152801929
+[debug] [2025-10-22T16:06:47.880Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/so-theo-doi-dien-tu/adminSdkConfig [none]
+[debug] [2025-10-22T16:06:48.149Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/so-theo-doi-dien-tu/adminSdkConfig 200
+[debug] [2025-10-22T16:06:48.151Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/so-theo-doi-dien-tu/adminSdkConfig {"projectId":"so-theo-doi-dien-tu","storageBucket":"so-theo-doi-dien-tu.firebasestorage.app"}
+[debug] [2025-10-22T16:06:48.210Z] [functions] Watching "/home/user/s-chuyn-cn/functions" for Cloud Functions...
+[debug] [2025-10-22T16:06:48.244Z] Validating nodejs source
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] ⚠  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2025-10-22T16:06:49.397Z] > [functions] package.json contents: {
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "scripts": {
+    "lint": "eslint . --fix",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "build": "tsc"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "eslint-config-google": "^0.14.0",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
+    "eslint-plugin-import": "^2.25.4",
+    "typescript": "^5.0.0"
+  },
+  "private": true
+}
+[debug] [2025-10-22T16:06:49.397Z] Building nodejs source
+[debug] [2025-10-22T16:06:49.398Z] Failed to find version of module node: reached end of search path /home/user/s-chuyn-cn/functions/node_modules
+[warn] ⚠  functions: Your requested "node" version "18" doesn't match your global version "20". Using node@20 from host. 
+[debug] [2025-10-22T16:06:49.403Z] Could not find functions.yaml. Must use http discovery
+[debug] [2025-10-22T16:06:49.406Z] Found firebase-functions binary at '/home/user/s-chuyn-cn/functions/node_modules/.bin/firebase-functions'
+[info] Serving at port 8865
+
+[debug] [2025-10-22T16:06:49.885Z] Got response from /__/functions.yaml {"endpoints":{"createUser":{"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"concurrency":null,"serviceAccountEmail":null,"vpc":null,"platform":"gcfv2","labels":{},"callableTrigger":{},"entryPoint":"createUser"}},"specVersion":"v1alpha1","requiredAPIs":[],"extensions":{}}
+[debug] [2025-10-22T16:06:49.940Z] [functions] Loaded functions definitions from source: createUser.
+[debug] [2025-10-22T16:06:49.943Z] [functions[us-central1-createUser]] http function initialized (http://127.0.0.1:5002/so-theo-doi-dien-tu/us-central1/createUser).
+[info] i  functions: Loaded functions: createUser 
+[warn] ⚠  functions: The following emulators are not running, calls to these services will affect production: firestore, database, pubsub, storage, eventarc, tasks 
+[debug] [2025-10-22T16:06:51.299Z] Functions emulator received unknown request at path /
