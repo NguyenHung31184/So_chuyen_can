@@ -57,15 +57,6 @@ export interface AppContextType {
 // --- KHỞI TẠO CONTEXT --- //
 export const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Hook tùy chỉnh để sử dụng context dễ dàng hơn
-export const useAppContext = () => {
-    const context = useContext(AppContext);
-    if (!context) {
-        throw new Error('useAppContext must be used within an AppProvider');
-    }
-    return context;
-};
-
 // --- COMPONENT: APP PROVIDER --- //
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // === STATE ===
@@ -275,4 +266,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             {children}
         </AppContext.Provider>
     );
+};
+
+// Hook tùy chỉnh để sử dụng context dễ dàng hơn
+export const useAppContext = () => {
+    const context = useContext(AppContext);
+    if (!context) {
+        throw new Error('useAppContext must be used within an AppProvider');
+    }
+    return context;
 };
