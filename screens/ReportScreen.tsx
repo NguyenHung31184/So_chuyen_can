@@ -25,12 +25,11 @@ const getSessionPeriod = (date: Date): string => {
     return 'Tối';
 };
 
-// --- LOGIC TÌM TRÙNG LẶP (Logic hỗ trợ Kiểm tra chéo: Phân biệt theo Người tạo) ---
+// --- LOGIC TÌM TRÙNG LẶP ---
 const findDuplicateSessions = (sessions: Session[]): { duplicates: Session[] } => {
     const seen = new Set<string>();
     const duplicates: Session[] = [];
 
-    // Sắp xếp theo thời gian để đảm bảo bản ghi cũ nhất (hoặc đầu tiên) được giữ lại, các bản ghi sau bị coi là trùng
     const sortedSessions = [...sessions].sort((a, b) => 
         (a.startTimestamp || 0) - (b.startTimestamp || 0)
     );
@@ -39,20 +38,17 @@ const findDuplicateSessions = (sessions: Session[]): { duplicates: Session[] } =
         const date = toDate(session.startTimestamp);
         if (!date) return;
 
-        // Tạo khóa định danh duy nhất (Unique Key)
         const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-        const timeKey = `${date.getHours()}:${date.getMinutes()}`; // Bỏ qua giây
+        const timeKey = `${date.getHours()}:${date.getMinutes()}`;
         
-        // Cần ID người tạo để phân biệt phiếu của GV và phiếu của Nhóm trưởng.
         const creatorId = (session as any).createdBy || (session as any).userId || 'unknown_creator';
 
-        // Key bao gồm: ID Giáo viên dạy - ID Khóa học - Ngày - Giờ - ID NGƯỜI TẠO PHIẾU
         const key = `${session.teacherId}-${session.courseId}-${dateKey}-${timeKey}-${creatorId}`;
         
         if (seen.has(key)) {
-            duplicates.push(session); // Đã thấy key này rồi -> Rác
+            duplicates.push(session);
         } else {
-            seen.add(key); // Chưa thấy -> Bản gốc
+            seen.add(key);
         }
     });
 
@@ -132,7 +128,6 @@ const ReportScreen: React.FC = () => {
 
     if (!context) return <div className="p-6 text-center text-gray-500">Đang tải dữ liệu...</div>;
     
-    // --- FIX: Lấy fetchData từ context ---
     const { courses, users, students, sessions, vehicles, deleteSession, fetchData } = context as AppContextType;
 
     const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
@@ -163,7 +158,6 @@ const ReportScreen: React.FC = () => {
             return;
         }
         
-        // Quét ngay lập tức
         setTimeout(() => {
             const { duplicates: foundDuplicates } = findDuplicateSessions(sessions);
             setDuplicates(foundDuplicates);
@@ -185,7 +179,6 @@ const ReportScreen: React.FC = () => {
                 await deleteSession(session.id);
                 deletedCount++;
             }
-            // --- FIX: Gọi lại fetchData để đồng bộ hoàn toàn dữ liệu từ Server ---
             await fetchData(); 
             
             setDeleteComplete(true);
@@ -209,7 +202,8 @@ const ReportScreen: React.FC = () => {
             if (!sessionDate) return false;
             if (start && sessionDate < start) return false;
             if (end && sessionDate > end) return false;
-            if (activeTab === 'attendance' && selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
+            // Áp dụng bộ lọc khóa học cho tất cả các tab (bao gồm Vận hành)
+            if (selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
             return true;
         });
     }, [sessions, startDate, endDate, selectedCourseId, activeTab]);
@@ -376,7 +370,6 @@ const ReportScreen: React.FC = () => {
                     >
                         Báo cáo Điểm danh
                     </button>
-                    {/* TAB MỚI: TIỆN ÍCH */}
                     <button 
                         onClick={() => setActiveTab('cleanup')}
                         className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'cleanup' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500'}`}
@@ -385,7 +378,7 @@ const ReportScreen: React.FC = () => {
                     </button>
                 </div>
                 
-                {/* FILTERS (Chỉ hiện cho Vận hành và Điểm danh) */}
+                {/* FILTERS */}
                 {activeTab !== 'cleanup' && (
                     <div className="p-4 bg-gray-50 border-b">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -399,7 +392,11 @@ const ReportScreen: React.FC = () => {
                             </div>
                             <div className="col-span-2">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Khóa đào tạo</label>
-                                <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full p-2 border rounded-lg text-sm bg-white" disabled={activeTab !== 'attendance'}>
+                                <select 
+                                    value={selectedCourseId} 
+                                    onChange={e => setSelectedCourseId(e.target.value)} 
+                                    className="w-full p-2 border rounded-lg text-sm bg-white"
+                                >
                                     <option value="all">Tất cả khóa đào tạo</option>
                                     {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
                                 </select>
@@ -484,7 +481,7 @@ const ReportScreen: React.FC = () => {
                     </>
                 )}
 
-                {/* NEW TAB: DATA CLEANUP TOOL */}
+                {/* DATA CLEANUP TOOL TAB */}
                 {activeTab === 'cleanup' && (
                     <div className="bg-white rounded-2xl shadow-sm border border-yellow-300 overflow-hidden">
                         <div className="p-4 bg-yellow-50 border-b border-yellow-200">
