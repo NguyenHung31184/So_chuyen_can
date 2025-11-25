@@ -340,10 +340,10 @@ const ReportScreen: React.FC = () => {
     const [endDate, setEndDate] = useState('');
     const [selectedCourseId, setSelectedCourseId] = useState('all');
     
-    const [dieselPrice, setDieselPrice] = useState(20000);
+    const [dieselPrice, setDieselPrice] = useState(25000);
     const [electricityPrice, setElectricityPrice] = useState(3000);
-    const [hourlyRate, setHourlyRate] = useState(50000);
-    const [sessionRate, setSessionRate] = useState(200000);
+    const [hourlyRate, setHourlyRate] = useState(100000);
+    const [sessionRate, setSessionRate] = useState(500000);
 
     const [duplicates, setDuplicates] = useState<Session[]>([]);
     const [isScanning, setIsScanning] = useState(false);
@@ -777,7 +777,7 @@ const ReportScreen: React.FC = () => {
                                         className="text-blue-600 text-sm font-bold bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors flex items-center"
                                     >
                                         <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                        Xuất Bảng Chấm Công (Excel Chuẩn)
+                                        Xuất Excel Chấm Công
                                     </button>
                                     <button onClick={() => handleSummaryExport('teacher')} className="text-gray-600 text-sm font-bold hover:text-gray-900">Xuất Excel DS</button>
                                 </div>
