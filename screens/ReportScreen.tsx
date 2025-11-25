@@ -1,23 +1,34 @@
 import React, { useState, useContext, useMemo } from 'react';
-import { AppContext, AppContextType } from '../contexts/AppContext';
-import { User, UserRole, Vehicle, FuelType, PaymentType, RateUnit, Session } from '../types';
-import * as XLSX from 'xlsx';
+// [QUAN TRỌNG] Import AppContext thật từ dự án của bạn
+import { AppContext } from '../contexts/AppContext';
 
-// --- HÀM HỖ TRỢ ---
+// [QUAN TRỌNG] Import các Types thật từ dự án của bạn
+import { User, UserRole, Session, FuelType, Course, RateUnit, PaymentType } from '../types';
+
+// Sử dụng ExcelJS từ CDN
+import ExcelJS from 'https://cdn.skypack.dev/exceljs';
+import { saveAs } from 'https://cdn.skypack.dev/file-saver';
+
+
+// --- HÀM HỖ TRỢ (UTILS) ---
 const toDate = (value: any): Date | null => {
     if (!value) return null;
     const date = new Date(value);
     return date && !isNaN(date.getTime()) ? date : null;
 };
 
-const calculateDurationInHours = (start: any, end: any): number => {
-    const startDate = toDate(start);
-    const endDate = toDate(end);
-    if (!startDate || !endDate) return 0;
-    return (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
+const calculateDurationInHours = (start: number, end: number): number => {
+    if (!start || !end) return 0;
+    return (end - start) / (1000 * 60 * 60);
 };
 
-// Hàm xác định buổi (Sáng/Chiều/Tối)
+const getSessionCode = (date: Date): string => {
+    const hour = date.getHours();
+    if (hour < 12) return 'S';
+    if (hour < 18) return 'C';
+    return 'T';
+};
+
 const getSessionPeriod = (date: Date): string => {
     const hour = date.getHours();
     if (hour < 12) return 'Sáng';
@@ -25,12 +36,27 @@ const getSessionPeriod = (date: Date): string => {
     return 'Tối';
 };
 
-// --- LOGIC TÌM TRÙNG LẶP (Logic hỗ trợ Kiểm tra chéo: Phân biệt theo Người tạo) ---
+// Cập nhật hàm này để xử lý an toàn hơn với dữ liệu thiếu trường
+const getCourseDisplayString = (course: any) => {
+    if (!course) return 'N/A';
+    // Fallback: Nếu không có 'name' thì thử tìm 'courseName', tương tự với 'courseNumber'
+    const name = course.name || course.courseName || 'Tên khóa?';
+    const number = course.courseNumber || course.code || course.number || '?';
+    return `${name} - K${number}`;
+};
+
+const formatCurrency = (value: number) => !isNaN(value) ? value.toLocaleString('vi-VN') + ' đ' : '0 đ';
+
+const formatDate = (date: any) => {
+    const d = toDate(date);
+    return d ? d.toLocaleDateString('vi-VN') : 'N/A';
+};
+
+// --- LOGIC TÌM TRÙNG LẶP ---
 const findDuplicateSessions = (sessions: Session[]): { duplicates: Session[] } => {
     const seen = new Set<string>();
     const duplicates: Session[] = [];
 
-    // Sắp xếp theo thời gian để đảm bảo bản ghi cũ nhất (hoặc đầu tiên) được giữ lại, các bản ghi sau bị coi là trùng
     const sortedSessions = [...sessions].sort((a, b) => 
         (a.startTimestamp || 0) - (b.startTimestamp || 0)
     );
@@ -39,34 +65,234 @@ const findDuplicateSessions = (sessions: Session[]): { duplicates: Session[] } =
         const date = toDate(session.startTimestamp);
         if (!date) return;
 
-        // Tạo khóa định danh duy nhất (Unique Key)
         const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-        const timeKey = `${date.getHours()}:${date.getMinutes()}`; // Bỏ qua giây
-        
-        // Cần ID người tạo để phân biệt phiếu của GV và phiếu của Nhóm trưởng.
-        const creatorId = (session as any).createdBy || (session as any).userId || 'unknown_creator';
-
-        // Key bao gồm: ID Giáo viên dạy - ID Khóa học - Ngày - Giờ - ID NGƯỜI TẠO PHIẾU
+        const timeKey = `${date.getHours()}:${date.getMinutes()}`;
+        const creatorId = (session as any).creatorId || 'unknown';
         const key = `${session.teacherId}-${session.courseId}-${dateKey}-${timeKey}-${creatorId}`;
         
         if (seen.has(key)) {
-            duplicates.push(session); // Đã thấy key này rồi -> Rác
+            duplicates.push(session);
         } else {
-            seen.add(key); // Chưa thấy -> Bản gốc
+            seen.add(key);
         }
     });
-
     return { duplicates };
 };
 
-const exportExcel = (data: any[], fileName: string, sheetName: string) => {
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `${fileName}.xlsx`);
+// --- LOGIC XUẤT BẢNG CHẤM CÔNG EXCEL BẰNG EXCELJS ---
+const exportAttendanceReport = async (
+    companyName: string,
+    unitName: string,
+    courseName: string,
+    month: number,
+    year: number,
+    teachers: User[],
+    sessions: Session[],
+    minRows: number = 15
+) => {
+    const workbook = new ExcelJS.Workbook();
+    const daysInMonth = new Date(year, month, 0).getDate(); 
+
+    // --- SHEET 1: GIỜ THỰC TẾ ---
+    const sheetHours = workbook.addWorksheet('Gio_Day_Thuc_Te');
+    
+    // Style
+    const headerStyle = { font: { name: 'Times New Roman', bold: true, size: 11 }, alignment: { vertical: 'middle', horizontal: 'center', wrapText: true } };
+    const titleStyle = { font: { name: 'Times New Roman', bold: true, size: 14 }, alignment: { vertical: 'middle', horizontal: 'center' } };
+    const borderStyle = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+    // Header Thông tin
+    sheetHours.mergeCells('A1:P1');
+    sheetHours.getCell('A1').value = companyName.toUpperCase();
+    sheetHours.getCell('A1').font = { name: 'Times New Roman', bold: true, size: 11 };
+
+    sheetHours.mergeCells('A2:P2');
+    sheetHours.getCell('A2').value = unitName;
+    sheetHours.getCell('A2').font = { name: 'Times New Roman', bold: true, size: 11 };
+
+    sheetHours.mergeCells('A4:AK4');
+    sheetHours.getCell('A4').value = 'BẢNG CHẤM CÔNG VÀ THANH TOÁN TIỀN LƯƠNG (GIỜ THỰC TẾ)';
+    sheetHours.getCell('A4').style = titleStyle;
+
+    sheetHours.mergeCells('A5:AK5');
+    sheetHours.getCell('A5').value = `Tháng ${month} năm ${year}`;
+    sheetHours.getCell('A5').style = { font: { name: 'Times New Roman', italic: true, size: 11 }, alignment: { horizontal: 'center' } };
+
+    sheetHours.mergeCells('A6:AK6');
+    sheetHours.getCell('A6').value = `Lớp: ${courseName}`;
+    sheetHours.getCell('A6').style = { font: { name: 'Times New Roman', bold: true, size: 11 }, alignment: { horizontal: 'center' } };
+
+    // Table Header
+    sheetHours.mergeCells('A8:A9'); sheetHours.getCell('A8').value = 'STT';
+    sheetHours.mergeCells('B8:B9'); sheetHours.getCell('B8').value = 'Họ và tên';
+    sheetHours.mergeCells('C8:C9'); sheetHours.getCell('C8').value = 'Chức danh';
+    
+    let colIndex = 4; 
+    for (let d = 1; d <= 31; d++) {
+        const cell = sheetHours.getRow(8).getCell(colIndex);
+        cell.value = d;
+        
+        if (d <= daysInMonth) {
+            const currentDate = new Date(year, month - 1, d);
+            const dayOfWeek = currentDate.getDay();
+            if (dayOfWeek === 0) sheetHours.getRow(9).getCell(colIndex).value = 'CN';
+            else if (dayOfWeek === 6) sheetHours.getRow(9).getCell(colIndex).value = 'T7';
+        }
+        colIndex++;
+    }
+
+    const summaryHeaders = ['Sản xuất', 'TDTT, VHQC', 'Học họp (Tổng)', 'Nghỉ phép', 'Nghỉ BHXH', 'Nghỉ ko lý do', 'Cộng'];
+    summaryHeaders.forEach(header => {
+        sheetHours.mergeCells(8, colIndex, 9, colIndex);
+        sheetHours.getRow(8).getCell(colIndex).value = header;
+        colIndex++;
+    });
+
+    for (let r = 8; r <= 9; r++) {
+        const row = sheetHours.getRow(r);
+        for (let c = 1; c < colIndex; c++) {
+            const cell = row.getCell(c);
+            cell.style = headerStyle;
+            cell.border = borderStyle;
+        }
+    }
+
+    // Data
+    const attendanceMap: Record<string, Record<number, { hours: number, codes: string[] }>> = {};
+    sessions.forEach(session => {
+        const date = toDate(session.startTimestamp);
+        if (!date) return;
+        if (date.getMonth() + 1 !== month || date.getFullYear() !== year) return;
+        const day = date.getDate();
+        const duration = calculateDurationInHours(session.startTimestamp, session.endTimestamp);
+        if (!attendanceMap[session.teacherId]) attendanceMap[session.teacherId] = {};
+        if (!attendanceMap[session.teacherId][day]) attendanceMap[session.teacherId][day] = { hours: 0, codes: [] };
+        attendanceMap[session.teacherId][day].hours += duration;
+    });
+
+    let currentRow = 10;
+    let stt = 1;
+    teachers.forEach(teacher => {
+        const row = sheetHours.getRow(currentRow);
+        row.getCell(1).value = stt++;
+        row.getCell(2).value = teacher.name;
+        row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
+        row.getCell(3).value = 'Giáo viên';
+
+        const teacherData = attendanceMap[teacher.id] || {};
+        let total = 0;
+        let currentDataCol = 4;
+
+        for (let d = 1; d <= 31; d++) {
+            if (d <= daysInMonth) {
+                const dayData = teacherData[d];
+                if (dayData) {
+                    row.getCell(currentDataCol).value = dayData.hours;
+                    total += dayData.hours;
+                }
+            }
+            currentDataCol++;
+        }
+
+        row.getCell(37).value = total;
+
+        for (let c = 1; c < colIndex; c++) {
+            const cell = row.getCell(c);
+            cell.border = borderStyle;
+            if(c !== 2) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        }
+        
+        currentRow++;
+    });
+
+    const rowsToAdd = Math.max(0, minRows - teachers.length);
+    for (let i = 0; i < rowsToAdd; i++) {
+        const row = sheetHours.getRow(currentRow);
+        row.getCell(1).value = stt++;
+        for (let c = 1; c < colIndex; c++) {
+            row.getCell(c).border = borderStyle;
+        }
+        currentRow++;
+    }
+
+    currentRow += 2;
+    sheetHours.mergeCells(`A${currentRow}:C${currentRow}`);
+    sheetHours.getCell(`A${currentRow}`).value = 'NGƯỜI LẬP BIỂU';
+    sheetHours.mergeCells(`O${currentRow}:R${currentRow}`);
+    sheetHours.getCell(`O${currentRow}`).value = 'KẾ TOÁN TRƯỞNG';
+    sheetHours.mergeCells(`AB${currentRow}:AE${currentRow}`);
+    sheetHours.getCell(`AB${currentRow}`).value = 'GIÁM ĐỐC';
+
+    sheetHours.getColumn(1).width = 5;
+    sheetHours.getColumn(2).width = 25;
+    sheetHours.getColumn(3).width = 12;
+    for(let c=4; c<=34; c++) sheetHours.getColumn(c).width = 4;
+    for(let c=35; c<colIndex; c++) sheetHours.getColumn(c).width = 10;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `BangChamCong_${courseName}_T${month}_${year}.xlsx`);
 };
 
-// --- MODAL CHI TIẾT ---
+
+// --- EXPORT MODAL ---
+const ExportConfigModal = ({ isOpen, onClose, onExport, courses }: any) => {
+    const today = new Date();
+    const [companyName, setCompanyName] = useState('CÔNG TY CỔ PHẦN DỊCH VỤ KỸ THUẬT VÀ ĐÀO TẠO CẢNG HẢI PHÒNG');
+    const [unitName, setUnitName] = useState('Đội kỹ thuật khu vực Cảng Hoàng Diệu Chùa Vẽ');
+    const [month, setMonth] = useState(today.getMonth() + 1);
+    const [year, setYear] = useState(today.getFullYear());
+    const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div className="bg-blue-600 p-4">
+                    <h3 className="text-white font-bold text-lg">Xuất Bảng Chấm Công (Mẫu Excel Chuẩn)</h3>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Tên Công Ty (Header 1)</label>
+                        <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Tên Đơn Vị (Header 2)</label>
+                        <input type="text" value={unitName} onChange={e => setUnitName(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">Tháng</label>
+                            <input type="number" min={1} max={12} value={month} onChange={e => setMonth(parseInt(e.target.value))} className="w-full p-2 border rounded-lg text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">Năm</label>
+                            <input type="number" value={year} onChange={e => setYear(parseInt(e.target.value))} className="w-full p-2 border rounded-lg text-sm" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">Chọn Khóa Đào Tạo</label>
+                        <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full p-2 border rounded-lg text-sm">
+                            {(courses || []).map((c: any) => <option key={c.id} value={c.id}>{getCourseDisplayString(c)}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <div className="p-4 bg-gray-50 flex justify-end gap-3 border-t">
+                    <button onClick={onClose} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Hủy</button>
+                    <button 
+                        onClick={() => onExport(companyName, unitName, month, year, selectedCourseId)} 
+                        className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm flex items-center"
+                    >
+                        Xuất Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- DETAIL MODAL ---
 const DetailModal = ({ isOpen, onClose, title, headers, data, onExport }: any) => {
     if (!isOpen) return null;
 
@@ -105,22 +331,20 @@ const DetailModal = ({ isOpen, onClose, title, headers, data, onExport }: any) =
     );
 };
 
+// --- MAIN SCREEN ---
 const ReportScreen: React.FC = () => {
     const context = useContext(AppContext);
     
-    // --- STATE ---
     const [activeTab, setActiveTab] = useState<'operation' | 'attendance' | 'cleanup'>('operation');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedCourseId, setSelectedCourseId] = useState('all');
     
-    // Cost configurations
     const [dieselPrice, setDieselPrice] = useState(20000);
     const [electricityPrice, setElectricityPrice] = useState(3000);
     const [hourlyRate, setHourlyRate] = useState(50000);
     const [sessionRate, setSessionRate] = useState(200000);
 
-    // Cleanup Tool State
     const [duplicates, setDuplicates] = useState<Session[]>([]);
     const [isScanning, setIsScanning] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -129,27 +353,52 @@ const ReportScreen: React.FC = () => {
     const [cleanupError, setCleanupError] = useState<string | null>(null);
 
     const [modalState, setModalState] = useState({ isOpen: false, title: '', headers: [], data: [], onExport: () => {} });
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
     if (!context) return <div className="p-6 text-center text-gray-500">Đang tải dữ liệu...</div>;
     
-    // --- FIX: Lấy fetchData từ context ---
-    const { courses, users, students, sessions, vehicles, deleteSession, fetchData } = context as AppContextType;
+    const { courses, users, students, sessions, vehicles, deleteSession, fetchData } = context;
 
     const teachers = useMemo(() => (users || []).filter(u => u.role === UserRole.TEACHER), [users]);
 
-    // --- HELPERS ---
-    const getCourseDisplayString = (courseId: string) => {
-        const course = (courses || []).find(c => c.id === courseId);
-        return course ? `${course.name} - K${course.courseNumber}` : 'N/A';
-    };
     const getUserName = (id: string) => users?.find(u => u.id === id)?.name || 'Không rõ';
-    const formatCurrency = (value: number) => !isNaN(value) ? value.toLocaleString('vi-VN') + ' đ' : '0 đ';
-    const formatDate = (date: any) => {
-        const d = toDate(date);
-        return d ? d.toLocaleDateString('vi-VN') : 'N/A';
+
+    const handleExportAttendanceSubmit = (companyName: string, unitName: string, month: number, year: number, courseId: string) => {
+        const targetSessions = (sessions || []).filter(s => s.courseId === courseId);
+        const teacherIdsInCourse = Array.from(new Set(targetSessions.map(s => s.teacherId)));
+        const teachersInCourse = teachers.filter(t => teacherIdsInCourse.includes(t.id));
+
+        if (teachersInCourse.length === 0) {
+            alert('Không tìm thấy giáo viên nào có lịch dạy trong khóa học này.');
+            return;
+        }
+
+        const course = courses?.find(c => c.id === courseId);
+        const courseName = course ? `${course.name} - K${course.courseNumber}` : 'Không rõ';
+
+        exportAttendanceReport(companyName, unitName, courseName, month, year, teachersInCourse, targetSessions);
+        setIsExportModalOpen(false);
+    };
+    
+    // Hàm xuất excel đơn giản cho Modal Chi tiết
+    const handleSimpleExport = async (data: any[], fileName: string) => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Sheet1');
+        
+        if (data.length > 0) {
+            const headers = Object.keys(data[0]);
+            worksheet.addRow(headers);
+        }
+
+        data.forEach(row => {
+            worksheet.addRow(Object.values(row));
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `${fileName}.xlsx`);
     };
 
-    // --- CLEANUP ACTIONS ---
     const handleScan = () => {
         setIsScanning(true);
         setScanComplete(false);
@@ -163,7 +412,6 @@ const ReportScreen: React.FC = () => {
             return;
         }
         
-        // Quét ngay lập tức
         setTimeout(() => {
             const { duplicates: foundDuplicates } = findDuplicateSessions(sessions);
             setDuplicates(foundDuplicates);
@@ -185,9 +433,7 @@ const ReportScreen: React.FC = () => {
                 await deleteSession(session.id);
                 deletedCount++;
             }
-            // --- FIX: Gọi lại fetchData để đồng bộ hoàn toàn dữ liệu từ Server ---
             await fetchData(); 
-            
             setDeleteComplete(true);
             setDuplicates([]);
         } catch (err) {
@@ -198,7 +444,6 @@ const ReportScreen: React.FC = () => {
         }
     };
 
-    // --- REPORT LOGIC ---
     const filteredSessions = useMemo(() => {
         const start = startDate ? toDate(startDate) : null;
         const end = endDate ? toDate(endDate) : null;
@@ -209,12 +454,11 @@ const ReportScreen: React.FC = () => {
             if (!sessionDate) return false;
             if (start && sessionDate < start) return false;
             if (end && sessionDate > end) return false;
-            if (activeTab === 'attendance' && selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
+            if (selectedCourseId !== 'all' && session.courseId !== selectedCourseId) return false;
             return true;
         });
     }, [sessions, startDate, endDate, selectedCourseId, activeTab]);
 
-    // 1. Teacher Report
     const teacherReportData = useMemo(() => {
         const report: { [teacherId: string]: { teacher: User, totalHours: number, totalSessions: number } } = {};
         teachers.forEach(t => { report[t.id] = { teacher: t, totalHours: 0, totalSessions: 0 }; });
@@ -230,7 +474,6 @@ const ReportScreen: React.FC = () => {
         return Object.values(report).filter(item => item.totalHours > 0 || item.totalSessions > 0).sort((a, b) => b.totalHours - a.totalHours);
     }, [filteredSessions, teachers]);
 
-    // 2. Student Report
     const studentReportData = useMemo(() => {
         if (selectedCourseId === 'all') return [];
         const courseStudents = (students || []).filter(s => s.courseId === selectedCourseId);
@@ -241,14 +484,13 @@ const ReportScreen: React.FC = () => {
 
         return courseStudents.map(student => {
             const attendedSessionsCount = courseSessions.filter(s => 
-                Array.isArray(s.studentIds) && s.studentIds.includes(student.id)
+                Array.isArray(s.attendees) && s.attendees.includes(student.id) // Sửa studentIds -> attendees
             ).length;
             const attendancePercentage = (attendedSessionsCount / totalLogicalSessions) * 100;
             return { student, attendedSessions: attendedSessionsCount, totalSessions: totalLogicalSessions, attendancePercentage };
         }).sort((a, b) => a.student.name.localeCompare(b.student.name));
     }, [students, filteredSessions, selectedCourseId]);
 
-    // 3. Cost Report
     const costReportData = useMemo(() => {
         if (!users || !vehicles) return [];
         let totalTeacherPayment = 0;
@@ -260,13 +502,15 @@ const ReportScreen: React.FC = () => {
             if (duration <= 0) return;
 
             const teacher = users.find(u => u.id === session.teacherId);
-            if (teacher) {
-                const isSessionBased = teacher.payment?.rateUnit === RateUnit.SESSION;
-                if (isSessionBased) {
-                    totalTeacherPayment += 1 * sessionRate;
+            if (teacher && teacher.payment) {
+                const { amount, rateUnit } = teacher.payment;
+                if (rateUnit === RateUnit.SESSION) {
+                    totalTeacherPayment += amount;
                 } else {
-                    totalTeacherPayment += duration * hourlyRate;
+                    totalTeacherPayment += duration * amount;
                 }
+            } else {
+                 totalTeacherPayment += duration * hourlyRate;
             }
 
             if (session.vehicleId) {
@@ -289,7 +533,6 @@ const ReportScreen: React.FC = () => {
         ];
     }, [filteredSessions, dieselPrice, electricityPrice, hourlyRate, sessionRate, users, vehicles]);
 
-    // --- EXPORT & DETAIL HANDLERS ---
     const handleSummaryExport = (report: 'teacher' | 'student' | 'cost') => {
         let summaryData: any[] = [];
         let fileName = `BaoCao_${report}_${startDate || 'ToanBo'}_${endDate || ''}`;
@@ -307,7 +550,7 @@ const ReportScreen: React.FC = () => {
                 'STT': index + 1, 'Khoản mục': item.description, 'Thành tiền': item.total
             }));
         }
-        exportExcel(summaryData, fileName, 'TongHop');
+        handleSimpleExport(summaryData, fileName);
     };
 
     const handleDetailClick = (type: string, item: any) => {
@@ -317,35 +560,90 @@ const ReportScreen: React.FC = () => {
 
         if (type === 'teacher') {
             title = `Chi tiết: ${item.teacher.name}`;
-            headers = ['STT', 'Ngày', 'Buổi', 'Khóa', 'Nội dung', 'Giờ dạy'];
-            detailData = filteredSessions.filter(s => s.teacherId === item.teacher.id).map((s, i) => {
+            headers = ['STT', 'NGÀY', 'BUỔI', 'KHÓA', 'NỘI DUNG', 'GIỜ DẠY'];
+            const teacherSessions = filteredSessions.filter(s => s.teacherId === item.teacher.id);
+            
+            detailData = teacherSessions.map((s, i) => {
                 const sDate = toDate(s.startTimestamp);
                 return {
                     'STT': i + 1,
-                    'Ngày': formatDate(s.startTimestamp),
-                    'Buổi': sDate ? getSessionPeriod(sDate) : '-',
-                    'Khóa': getCourseDisplayString(s.courseId),
-                    'Nội dung': s.content,
-                    'Giờ dạy': calculateDurationInHours(s.startTimestamp, s.endTimestamp).toFixed(2)
+                    'NGÀY': formatDate(s.startTimestamp),
+                    'BUỔI': sDate ? getSessionPeriod(sDate) : '-',
+                    'KHÓA': getCourseDisplayString(courses?.find(c => c.id === s.courseId)),
+                    'NỘI DUNG': s.content,
+                    'GIỜ DẠY': calculateDurationInHours(s.startTimestamp, s.endTimestamp).toFixed(2)
                 };
             });
         } else if (type === 'student') {
             title = `Điểm danh: ${item.student.name}`;
-            headers = ['STT', 'Ngày', 'Buổi', 'Nội dung', 'Trạng thái'];
-            const courseSessions = filteredSessions.filter(s => s.courseId === item.student.courseId);
+            headers = ['STT', 'NGÀY', 'BUỔI', 'KHÓA', 'NỘI DUNG', 'TRẠNG THÁI'];
+            
+            const courseSessions = filteredSessions.filter(s => 
+                s.courseId === item.student.courseId && 
+                Array.isArray(s.attendees) && 
+                s.attendees.includes(item.student.id)
+            );
+            
             detailData = courseSessions.map((s, i) => {
                 const sDate = toDate(s.startTimestamp);
                 return {
                     'STT': i + 1,
-                    'Ngày': formatDate(s.startTimestamp),
-                    'Buổi': sDate ? getSessionPeriod(sDate) : '-',
-                    'Nội dung': s.content,
-                    'Trạng thái': (s.studentIds || []).includes(item.student.id) ? 'Có mặt' : 'Vắng'
+                    'NGÀY': formatDate(s.startTimestamp),
+                    'BUỔI': sDate ? getSessionPeriod(sDate) : '-',
+                    'KHÓA': getCourseDisplayString(courses?.find(c => c.id === s.courseId)),
+                    'NỘI DUNG': s.content,
+                    'TRẠNG THÁI': 'Có mặt'
                 };
             });
         } else if (type.startsWith('cost')) {
-            title = `Chi tiết ${item.description}`;
-            headers = ['STT', 'Ngày', 'Phương tiện/GV', 'Giờ', 'Định mức/Đơn giá', 'Thành tiền'];
+            title = `Chi tiết: ${item.description}`;
+            headers = ['STT', 'NGÀY', 'BUỔI', 'ĐỐI TƯỢNG', 'TIÊU THỤ/THỜI GIAN', 'THÀNH TIỀN'];
+            
+            if (item.id === 'cost_teacher_payment') {
+                detailData = filteredSessions.filter(s => !!s.teacherId).map((s, i) => {
+                    const sDate = toDate(s.startTimestamp);
+                    const duration = calculateDurationInHours(s.startTimestamp, s.endTimestamp);
+                    const teacher = users?.find(u => u.id === s.teacherId);
+                    let amount = 0;
+                    if (teacher && teacher.payment) {
+                        amount = teacher.payment.rateUnit === RateUnit.SESSION 
+                            ? teacher.payment.amount 
+                            : duration * teacher.payment.amount;
+                    } else {
+                        amount = duration * hourlyRate;
+                    }
+                    return {
+                        'STT': i + 1,
+                        'NGÀY': formatDate(s.startTimestamp),
+                        'BUỔI': sDate ? getSessionPeriod(sDate) : '-',
+                        'ĐỐI TƯỢNG': teacher ? teacher.name : 'GV Chưa rõ',
+                        'TIÊU THỤ/THỜI GIAN': `${duration.toFixed(2)} giờ`,
+                        'THÀNH TIỀN': formatCurrency(amount)
+                    };
+                });
+            } else if (item.id === 'cost_diesel' || item.id === 'cost_electricity') {
+                const targetFuelType = item.id === 'cost_diesel' ? FuelType.DIESEL : FuelType.ELECTRIC;
+                const price = item.id === 'cost_diesel' ? dieselPrice : electricityPrice;
+                const unit = item.id === 'cost_diesel' ? 'lít' : 'kWh';
+
+                detailData = filteredSessions.filter(s => {
+                    const v = vehicles?.find(veh => veh.id === s.vehicleId);
+                    return v && v.fuelType === targetFuelType;
+                }).map((s, i) => {
+                    const sDate = toDate(s.startTimestamp);
+                    const duration = calculateDurationInHours(s.startTimestamp, s.endTimestamp);
+                    const vehicle = vehicles?.find(v => v.id === s.vehicleId);
+                    const consumption = duration * (vehicle?.consumptionRate || 0);
+                    return {
+                        'STT': i + 1,
+                        'NGÀY': formatDate(s.startTimestamp),
+                        'BUỔI': sDate ? getSessionPeriod(sDate) : '-',
+                        'ĐỐI TƯỢNG': vehicle ? vehicle.name : 'Xe Chưa rõ',
+                        'TIÊU THỤ/THỜI GIAN': `${consumption.toFixed(2)} ${unit}`,
+                        'THÀNH TIỀN': formatCurrency(consumption * price)
+                    };
+                });
+            }
         }
 
         setModalState({
@@ -353,7 +651,7 @@ const ReportScreen: React.FC = () => {
             title,
             headers,
             data: detailData,
-            onExport: () => exportExcel(detailData, title.replace(/ /g, '_'), 'ChiTiet')
+            onExport: () => handleSimpleExport(detailData, title.replace(/ /g, '_'))
         });
     };
 
@@ -376,7 +674,6 @@ const ReportScreen: React.FC = () => {
                     >
                         Báo cáo Điểm danh
                     </button>
-                    {/* TAB MỚI: TIỆN ÍCH */}
                     <button 
                         onClick={() => setActiveTab('cleanup')}
                         className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'cleanup' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500'}`}
@@ -385,7 +682,7 @@ const ReportScreen: React.FC = () => {
                     </button>
                 </div>
                 
-                {/* FILTERS (Chỉ hiện cho Vận hành và Điểm danh) */}
+                {/* FILTERS */}
                 {activeTab !== 'cleanup' && (
                     <div className="p-4 bg-gray-50 border-b">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -399,9 +696,13 @@ const ReportScreen: React.FC = () => {
                             </div>
                             <div className="col-span-2">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Khóa đào tạo</label>
-                                <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full p-2 border rounded-lg text-sm bg-white" disabled={activeTab !== 'attendance'}>
+                                <select 
+                                    value={selectedCourseId} 
+                                    onChange={e => setSelectedCourseId(e.target.value)} 
+                                    className="w-full p-2 border rounded-lg text-sm bg-white"
+                                >
                                     <option value="all">Tất cả khóa đào tạo</option>
-                                    {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
+                                    {(courses || []).map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c)}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -446,8 +747,14 @@ const ReportScreen: React.FC = () => {
                                                 <p className="text-xs text-gray-500">Tạm tính</p>
                                             </div>
                                         </div>
-                                        <div className="text-right">
+                                        <div className="text-right flex items-center gap-2">
                                             <p className="font-bold text-sm text-gray-800">{formatCurrency(item.total)}</p>
+                                            <button 
+                                                onClick={() => handleDetailClick(item.id, item)}
+                                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded font-medium"
+                                            >
+                                                Chi tiết
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -464,27 +771,82 @@ const ReportScreen: React.FC = () => {
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
                                 <h2 className="font-bold text-lg text-gray-800">Thống kê giờ dạy ({teacherReportData.length})</h2>
-                                <button onClick={() => handleSummaryExport('teacher')} className="text-blue-600 text-sm font-bold">Xuất Excel</button>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setIsExportModalOpen(true)}
+                                        className="text-blue-600 text-sm font-bold bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors flex items-center"
+                                    >
+                                        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        Xuất Bảng Chấm Công (Excel Chuẩn)
+                                    </button>
+                                    <button onClick={() => handleSummaryExport('teacher')} className="text-gray-600 text-sm font-bold hover:text-gray-900">Xuất Excel DS</button>
+                                </div>
                             </div>
                             <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto custom-scrollbar">
-                                {teacherReportData.length === 0 ? <p className="text-center py-8 text-gray-400">Không có dữ liệu</p> : teacherReportData.map((item, idx) => (
-                                    <div key={item.teacher.id} className="p-4 flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">{idx + 1}</div>
-                                            <div>
-                                                <p className="font-semibold text-sm text-gray-800">{item.teacher.name}</p>
-                                                <p className="text-xs text-gray-500">{item.totalHours.toFixed(1)} giờ dạy - {item.totalSessions} buổi</p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => handleDetailClick('teacher', item)} className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-lg font-bold hover:bg-gray-200">Chi tiết</button>
+                                {teacherReportData.length === 0 ? (
+                                    <div className="text-center py-8">
+                                        <p className="text-gray-400">Không có dữ liệu giáo viên</p>
+                                        {selectedCourseId !== 'all' && <p className="text-xs text-gray-400 mt-1">Đang lọc theo khóa học: {getCourseDisplayString(courses?.find(c => c.id === selectedCourseId))}</p>}
                                     </div>
-                                ))}
+                                ) : (
+                                    teacherReportData.map((item, idx) => (
+                                        <div key={item.teacher.id} className="p-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">{idx + 1}</div>
+                                                <div>
+                                                    <p className="font-semibold text-sm text-gray-800">{item.teacher.name}</p>
+                                                    <p className="text-xs text-gray-500">{item.totalHours.toFixed(1)} giờ dạy - {item.totalSessions} buổi</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => handleDetailClick('teacher', item)} className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-lg font-bold hover:bg-gray-200">Chi tiết</button>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </>
                 )}
 
-                {/* NEW TAB: DATA CLEANUP TOOL */}
+                {/* STUDENT REPORT TAB */}
+                {activeTab === 'attendance' && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                            <h2 className="font-bold text-lg text-gray-800">Điểm danh học viên ({studentReportData.length})</h2>
+                            <button onClick={() => handleSummaryExport('student')} className="text-blue-600 text-sm font-bold">Xuất Excel</button>
+                        </div>
+                        <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto custom-scrollbar">
+                            {studentReportData.length === 0 ? (
+                                <div className="text-center py-8 text-gray-400">
+                                    {selectedCourseId === 'all' 
+                                        ? 'Vui lòng chọn khóa học để xem báo cáo điểm danh' 
+                                        : 'Không có dữ liệu học viên trong khoảng thời gian này'}
+                                </div>
+                            ) : (
+                                studentReportData.map((item, idx) => (
+                                    <div key={item.student.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold text-xs">{idx + 1}</div>
+                                            <div>
+                                                <p className="font-semibold text-sm text-gray-800">{item.student.name}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    Có mặt: <span className="font-bold">{item.attendedSessions}</span>/{item.totalSessions} buổi 
+                                                    <span className={`ml-2 ${item.attendancePercentage < 50 ? 'text-red-500' : 'text-green-500'}`}>
+                                                        ({item.attendancePercentage.toFixed(1)}%)
+                                                    </span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleDetailClick('student', item)} className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-lg font-bold hover:bg-gray-200">
+                                            Chi tiết
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* DATA CLEANUP TOOL TAB */}
                 {activeTab === 'cleanup' && (
                     <div className="bg-white rounded-2xl shadow-sm border border-yellow-300 overflow-hidden">
                         <div className="p-4 bg-yellow-50 border-b border-yellow-200">
@@ -581,6 +943,13 @@ const ReportScreen: React.FC = () => {
             </div>
 
             <DetailModal {...modalState} onClose={() => setModalState(prev => ({ ...prev, isOpen: false }))} />
+            
+            <ExportConfigModal 
+                isOpen={isExportModalOpen} 
+                onClose={() => setIsExportModalOpen(false)} 
+                courses={courses}
+                onExport={handleExportAttendanceSubmit}
+            />
         </div>
     );
 };
