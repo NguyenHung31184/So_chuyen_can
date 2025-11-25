@@ -20,6 +20,9 @@ import ManagementScreen from './screens/ManagementScreen';
 import BottomNav from './components/BottomNav';
 import ReconciliationReportScreen from './screens/ReconciliationReportScreen';
 
+// Icons
+import { FiLogOut, FiUser } from "react-icons/fi";
+
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
@@ -202,24 +205,40 @@ const App: React.FC = () => {
         }
     };
     
-    if (authLoading) return <div className="flex justify-center items-center min-h-screen">Đang khởi động...</div>;
+    if (authLoading) return <div className="flex justify-center items-center min-h-screen font-sans">Đang khởi động...</div>;
     if (!currentUser) return <LoginScreen onLogin={handleLogin} error={loginError} />;
     if (mustChangePassword) return <ChangePasswordScreen onSubmit={handlePasswordChanged} error={changePasswordError} />;
-    if (dataLoading || !appContextValue) return <div className="flex justify-center items-center min-h-screen">Đang tải dữ liệu...</div>;
+    if (dataLoading || !appContextValue) return <div className="flex justify-center items-center min-h-screen font-sans">Đang tải dữ liệu...</div>;
 
     return (
         <AppContext.Provider value={appContextValue}>
-            <div className="min-h-screen bg-gray-100 font-sans">
-                 <header className="bg-primary shadow-md">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-                        <h1 className="text-xl font-bold text-white">Sổ Theo Dõi Điện Tử</h1>
-                        <div>
-                            <span className="text-white mr-4">Chào, {currentUser.name}!</span>
-                            <button onClick={handleLogout} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Đăng xuất</button>
+            <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+                 <header className="bg-white shadow-sm sticky top-0 z-50">
+                    <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-blue-600 p-1.5 rounded-lg">
+                                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                            </div>
+                            <h1 className="text-lg font-bold text-gray-800 tracking-tight">Sổ Theo Dõi</h1>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-end">
+                                <span className="text-sm font-bold text-gray-800 leading-none">{currentUser.name}</span>
+                                <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{currentUser.role}</span>
+                            </div>
+                            <div className="h-8 w-[1px] bg-gray-200 mx-1"></div>
+                            <button 
+                                onClick={handleLogout} 
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
+                                title="Đăng xuất"
+                            >
+                                <FiLogOut className="w-5 h-5" />
+                            </button>
                         </div>
                     </div>
                 </header>
-                <main className="pb-16">{renderScreen()}</main>
+                <main className="pb-20">{renderScreen()}</main>
                 {availableScreens.length > 0 && <BottomNav activeScreen={activeScreen} setActiveScreen={setActiveScreen} availableScreens={availableScreens} />}
             </div>
         </AppContext.Provider>
