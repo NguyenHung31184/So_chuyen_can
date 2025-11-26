@@ -2,7 +2,8 @@ import React, { useState, useContext, useMemo, useEffect, useRef } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { Session, TeacherSpecialty, UserRole, Course, Student, User } from '../types';
 import { format } from 'date-fns';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode'; // Import Html5Qrcode
+import type { CameraDevice } from 'html5-qrcode'; // Import CameraDevice type
 
 interface NewSessionModalProps {
   isOpen: boolean;
@@ -49,6 +50,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   
   // QR Scanner State
   const [isScanning, setIsScanning] = useState(false);
+  const [cameras, setCameras] = useState<CameraDevice[]>([]);
+  const [activeCameraId, setActiveCameraId] = useState<string | undefined>(undefined);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   // Initialize form
@@ -78,19 +81,87 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             setVehicleId('');
         }
         setError(null);
-        setIsScanning(false); // Reset scanner state
+        if (isScanning) {
+            stopScanner(); // Stop scanner if modal is re-opened
+        }
     }
   }, [isOpen, initialData, currentUser]);
 
-  // Clean up scanner on unmount or close
+  // --- QR SCANNER LOGIC (IMPROVED) ---
+
+  const stopScanner = () => {
+      if (scannerRef.current) {
+          scannerRef.current.clear()
+              .catch(err => console.error("Scanner clear failed.", err));
+          scannerRef.current = null;
+      }
+      setIsScanning(false);
+      setCameras([]);
+      setActiveCameraId(undefined);
+  };
+
   useEffect(() => {
-      return () => {
-          if (scannerRef.current) {
-              scannerRef.current.clear().catch(err => console.error("Failed to clear scanner", err));
-          }
-      };
+      // Cleanup scanner when component unmounts or modal closes
+      return () => stopScanner();
   }, []);
 
+  const startScanner = async () => {
+      setIsScanning(true);
+      try {
+          const availableCameras = await Html5Qrcode.getCameras();
+          if (availableCameras && availableCameras.length > 0) {
+              setCameras(availableCameras);
+              // Prioritize back camera ('environment'), otherwise use the first camera
+              const backCamera = availableCameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('môi trường'));
+              const initialCameraId = backCamera ? backCamera.id : availableCameras[0].id;
+              setActiveCameraId(initialCameraId);
+          } else {
+              setError('Không tìm thấy camera trên thiết bị này.');
+              setIsScanning(false);
+          }
+      } catch (err) {
+          setError('Không thể truy cập camera. Vui lòng cấp quyền cho trình duyệt.');
+          setIsScanning(false);
+          console.error(err);
+      }
+  };
+  
+  // Effect to initialize or restart scanner when active camera changes
+  useEffect(() => {
+      if (isScanning && activeCameraId) {
+          // Clear previous scanner instance if it exists
+          if (scannerRef.current) {
+              scannerRef.current.clear().catch(e => console.error("Error clearing old scanner", e));
+          }
+
+          const newScanner = new Html5QrcodeScanner(
+              'qr-reader',
+              { fps: 10, qrbox: { width: 250, height: 250 }, supportedScanTypes: [] },
+              false
+          );
+          scannerRef.current = newScanner;
+
+          const onScanSuccess = (decodedText: string) => {
+              const student = courseStudents.find(s => s.id === decodedText);
+              if (student && !presentStudentIds.includes(student.id)) {
+                  setPresentStudentIds(prev => [...prev, student.id]);
+                  // Optional: Play a sound or give visual feedback
+              }
+          };
+
+          newScanner.render(onScanSuccess, (error) => { /* ignore errors */ });
+      }
+  }, [isScanning, activeCameraId, courseStudents, presentStudentIds]); // Dependencies that re-trigger the scanner
+
+  const handleSwitchCamera = () => {
+      if (cameras.length > 1 && activeCameraId) {
+          const currentIndex = cameras.findIndex(c => c.id === activeCameraId);
+          const nextIndex = (currentIndex + 1) % cameras.length;
+          setActiveCameraId(cameras[nextIndex].id);
+      }
+  };
+  // --- END OF QR SCANNER LOGIC ---
+  
   const availableTeachers = useMemo(() => {
     if (!selectedCourseId) return [];
     const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
@@ -111,51 +182,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
           setPresentStudentIds([]); 
       } else {
           setPresentStudentIds(courseStudents.map(s => s.id));
-      }
-  };
-
-  // --- QR SCANNER LOGIC ---
-  const startScanner = () => {
-      setIsScanning(true);
-      setTimeout(() => {
-          const scanner = new Html5QrcodeScanner(
-              "qr-reader",
-              { fps: 10, qrbox: { width: 250, height: 250 } },
-              false
-          );
-          scannerRef.current = scanner;
-
-          scanner.render((decodedText) => {
-              // Xử lý khi quét thành công
-              const student = courseStudents.find(s => s.id === decodedText);
-              if (student) {
-                  setPresentStudentIds(prev => {
-                      if (!prev.includes(student.id)) {
-                          // Play beep sound (optional logic)
-                          return [...prev, student.id];
-                      }
-                      return prev;
-                  });
-                  alert(`Đã điểm danh: ${student.name}`);
-              } else {
-                  console.warn("Mã QR không hợp lệ hoặc học viên không thuộc khóa này.");
-              }
-          }, (errorMessage) => {
-              // Bỏ qua lỗi quét liên tục
-          });
-      }, 100);
-  };
-
-  const stopScanner = () => {
-      if (scannerRef.current) {
-          scannerRef.current.clear().then(() => {
-              setIsScanning(false);
-          }).catch((err) => {
-              console.error("Failed to clear scanner", err);
-              setIsScanning(false);
-          });
-      } else {
-          setIsScanning(false);
       }
   };
 
@@ -260,8 +286,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="flex-grow contents">
             <div className="flex-grow p-5 space-y-5 overflow-y-auto">
-                {/* Type & Date */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Form fields... */}
+                 <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Loại hình</label>
                       <select value={sessionType} onChange={(e) => setSessionType(e.target.value as any)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all">
@@ -275,8 +301,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     </div>
                 </div>
                 
-                {/* Time */}
-                 <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Bắt đầu</label>
                       <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -287,7 +312,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     </div>
                 </div>
 
-                {/* Course & Teacher */}
                 <div className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Khóa đào tạo</label>
@@ -305,50 +329,45 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     </div>
                 </div>
 
-                {/* Content */}
                 <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nội dung bài giảng</label>
                     <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" disabled={!selectedCourseId} placeholder="Nhập nội dung..." rows={3}></textarea>
                 </div>
                 
-                {/* Attendance */}
                 {courseStudents.length > 0 && (
                     <div className="border-t border-gray-100 pt-4">
-                        <div className="flex justify-between items-center mb-3">
+                         <div className="flex justify-between items-center mb-3">
                             <h4 className="font-bold text-gray-800">Điểm danh</h4>
                             <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">{presentStudentIds.length}/{courseStudents.length}</span>
                         </div>
 
-                        {/* Nút Quét QR Nổi bật */}
-                        <div className="mb-4">
+                        <div className="flex flex-col sm:flex-row gap-2 mb-4">
                             <button 
                                 type="button" 
                                 onClick={isScanning ? stopScanner : startScanner} 
-                                className={`w-full flex items-center justify-center p-4 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'}`}
+                                className={`w-full flex-grow flex items-center justify-center p-3 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-gradient-to-r from-purple-600 to-indigo-600'}`}
                             >
-                                {isScanning ? (
-                                    <>
-                                        <svg className="w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                        Dừng quét
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 17h.01M16 17h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        QUÉT THẺ HỌC VIÊN
-                                    </>
-                                )}
+                                {isScanning ? 'Dừng quét' : 'Quét QR'}
                             </button>
+                            {isScanning && cameras.length > 1 && (
+                                <button 
+                                    type="button" 
+                                    onClick={handleSwitchCamera}
+                                    className="w-full sm:w-auto px-4 py-3 bg-gray-700 text-white rounded-xl font-bold hover:bg-gray-800 flex items-center justify-center gap-2"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5" /></svg>
+                                    Đổi Camera
+                                </button>
+                            )}
                         </div>
 
-                        {/* Scanner Area */}
                         {isScanning && (
-                            <div className="mb-4 bg-black rounded-xl overflow-hidden shadow-inner border-4 border-indigo-500">
+                            <div className="mb-4 bg-black rounded-xl overflow-hidden shadow-inner border-4 border-indigo-500 animate-fade-in-fast">
                                 <div id="qr-reader" className="w-full"></div>
-                                <p className="text-center text-white text-xs py-2 font-medium animate-pulse">Đang tìm mã QR...</p>
+                                <p className="text-center text-white text-xs py-2 font-medium">Hướng camera về phía mã QR</p>
                             </div>
                         )}
                         
-                        {/* Manual Selection */}
                         <div className="flex justify-between items-center mb-2">
                              <span className="text-xs text-gray-500">Hoặc chọn thủ công:</span>
                              <button type="button" onClick={handleSelectAll} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">

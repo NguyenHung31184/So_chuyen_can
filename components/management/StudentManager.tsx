@@ -44,6 +44,7 @@ export const StudentManager: React.FC = () => {
     const { students, courses, addStudent, updateStudent, deleteStudent } = useAppContext();
     const [editingItem, setEditingItem] = useState<Student | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
 
     const studentsByCourse = useMemo(() => {
         const map: Record<string, Student[]> = {};
@@ -53,6 +54,12 @@ export const StudentManager: React.FC = () => {
 
     const handleFormSubmit = async (data: any) => editingItem ? await updateStudent({ ...editingItem, ...data }) : await addStudent(data);
 
+    const handleCopy = (id: string) => {
+        navigator.clipboard.writeText(id);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500); // Hide message after 1.5s
+    };
+
     if (!courses) return <div>Đang tải...</div>;
 
     return (
@@ -61,7 +68,24 @@ export const StudentManager: React.FC = () => {
                 const list = studentsByCourse[course.id] || [];
                 return (
                     <CollapsibleGroupCard key={course.id} title={`${course.name} - K${course.courseNumber}`} count={list.length}>
-                        {list.map(s => <ListItemCard key={s.id} title={s.name} subtitle={s.phone} badges={s.group ? [{text: `Nhóm ${s.group}`, color: 'bg-green-100 text-green-700'}] : []} onEdit={() => { setEditingItem(s); setIsFormOpen(true); }} onDelete={() => deleteStudent(s.id)} />)}
+                        {list.map(s => {
+                            const studentBadges = s.group ? [{ text: `Nhóm ${s.group}`, color: 'bg-green-100 text-green-700' }] : [];
+                            const idBadge = {
+                                text: copiedId === s.id ? 'Copied!' : `ID: ${s.id}`,
+                                color: copiedId === s.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-300 cursor-pointer',
+                                onClick: () => handleCopy(s.id)
+                            };
+                            return (
+                                <ListItemCard 
+                                    key={s.id} 
+                                    title={s.name} 
+                                    subtitle={s.phone} 
+                                    badges={[...studentBadges, idBadge]} 
+                                    onEdit={() => { setEditingItem(s); setIsFormOpen(true); }} 
+                                    onDelete={() => deleteStudent(s.id)} 
+                                />
+                            );
+                        })}
                     </CollapsibleGroupCard>
                 );
             })}

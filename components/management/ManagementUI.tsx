@@ -18,11 +18,17 @@ export const TabButton: React.FC<TabButtonProps> = ({ active, onClick, label }) 
 );
 
 // --- LIST ITEM CARD ---
+interface Badge {
+    text: string;
+    color: string;
+    onClick?: () => void; // Make onClick optional
+}
+
 interface ListItemCardProps {
     title: string;
     subtitle?: string;
     icon?: React.ReactNode;
-    badges?: { text: string; color: string }[];
+    badges?: Badge[];
     onEdit: () => void;
     onDelete: () => void;
 }
@@ -34,13 +40,20 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({ title, subtitle, ico
             </div>
             <div className="min-w-0">
                 <h4 className="font-bold text-gray-800 text-sm truncate">{title}</h4>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
-                    {badges && badges.map((badge, idx) => (
-                        <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badge.color}`}>
-                            {badge.text}
-                        </span>
-                    ))}
+                    {badges && badges.map((badge, idx) => {
+                        const BadgeElement = badge.onClick ? 'button' : 'span';
+                        return (
+                            <BadgeElement
+                                key={idx}
+                                onClick={badge.onClick}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium transition-colors ${badge.color}`}
+                            >
+                                {badge.text}
+                            </BadgeElement>
+                        );
+                    })}
                 </div>
             </div>
         </div>
@@ -99,7 +112,7 @@ export const ModalForm: React.FC<ModalFormProps> = ({ isOpen, title, onClose, on
                     <h3 className="font-bold text-lg text-gray-800">{title}</h3>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-200 text-gray-500 transition-colors">✕</button>
                 </div>
-                <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+                <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 pb-24">
                     {children}
                     <div className="pt-4 sticky bottom-0 bg-white border-t mt-4">
                         <button 
