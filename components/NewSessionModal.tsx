@@ -2,7 +2,7 @@ import React, { useState, useContext, useMemo, useEffect, useRef } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { Session, TeacherSpecialty, UserRole, Course, Student, User } from '../types';
 import { format } from 'date-fns';
-import { Html5Qrcode } from 'html5-qrcode'; // Use the core engine
+import { Html5Qrcode } from 'html5-qrcode';
 import type { CameraDevice } from 'html5-qrcode';
 
 interface NewSessionModalProps {
@@ -27,7 +27,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     currentUser: propCurrentUser
 }) => {
   const context = useContext(AppContext);
-  const courses = propCourses || context?.courses || [];
+  // Ưu tiên props, fallback về context, đảm bảo luôn là mảng
+  const allCourses = propCourses || context?.courses || [];
   const students = propStudents || context?.students || [];
   const currentUser = propCurrentUser || context?.currentUser;
   const users = context?.users || [];
@@ -52,13 +53,60 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [activeCameraId, setActiveCameraId] = useState<string | undefined>(undefined);
-  const scannerRef = useRef<Html5Qrcode | null>(null); // Use Html5Qrcode ref
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
-  // Derived data
+  // --- LOGIC: LỌC KHÓA HỌC (ACTIVE COURSES) ---
+  const activeCourses = useMemo(() => {
+    // Lấy đầu ngày hiện tại để so sánh
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Tính mốc thời gian 7 ngày trước (cho phép khóa học đã đóng hiển thị thêm 7 ngày)
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+
+    return allCourses.filter(course => {
+        // 1. Kiểm tra thời hạn khóa học (Cho phép trễ 7 ngày)
+        // Giả định course.endDate là chuỗi ISO hoặc timestamp
+        if (course.endDate) {
+            const courseEnd = typeof course.endDate === 'string' ? new Date(course.endDate) : new Date(course.endDate);
+            // Nếu ngày kết thúc NHỎ HƠN 7 ngày trước -> Khóa đã đóng quá lâu -> Ẩn
+            if (courseEnd.getTime() < sevenDaysAgo.getTime()) {
+                return false; 
+            }
+        }
+
+        // 2. Kiểm tra phân quyền theo Role
+        // --- ADMIN & MANAGER: Xem HẾT (Toàn quyền) ---
+        // Đảm bảo UserRole.MANAGER đã được định nghĩa trong file types của bạn
+        if (currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER) {
+            return true;
+        }
+
+        // --- TEACHER & TEAM_LEADER & STUDENT: Chỉ xem KHÓA CỦA MÌNH ---
+        // Yêu cầu: ID khóa học phải nằm trong mảng courseIds của User
+        if (
+            currentUser?.role === UserRole.TEACHER || 
+            currentUser?.role === UserRole.TEAM_LEADER ||
+            currentUser?.role === UserRole.STUDENT
+        ) {
+            return currentUser.courseIds?.includes(course.id);
+        }
+
+        // Mặc định các role khác (nếu có) không thấy gì để bảo mật tuyệt đối
+        return false;
+    });
+  }, [allCourses, currentUser]);
+
+  // --- Derived data ---
   const availableTeachers = useMemo(() => {
     if (!selectedCourseId) return [];
     const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
-    return teachers.filter(t => (t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty) || t.id === teacherId);
+    
+    // Lọc giáo viên có chuyên môn phù hợp VÀ được phân công vào khóa học này
+    return teachers.filter(t => 
+        (t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty) || t.id === teacherId
+    );
   }, [selectedCourseId, teachers, sessionType, teacherId]);
   
   const courseStudents = useMemo(() => {
@@ -82,12 +130,16 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             setPresentStudentIds(initialData.studentIds || initialData.attendees || []);
             setVehicleId(initialData.vehicleId || '');
         } else {
+            // Reset form for new session
             setSessionType('Lý thuyết');
             setDate(new Date().toISOString().split('T')[0]);
             setStartTime('06:00');
             setEndTime('12:00');
             setSelectedCourseId('');
+            
+            // Nếu user là Teacher, tự động điền ID của họ
             setTeacherId(currentUser?.role === UserRole.TEACHER ? currentUser.id : '');
+            
             setContent('');
             setPresentStudentIds([]);
             setVehicleId('');
@@ -99,8 +151,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     }
   }, [isOpen, initialData, currentUser]);
 
-  // --- QR SCANNER LOGIC (CLEAN UI) ---
-
+  // --- QR SCANNER LOGIC ---
   const stopScanner = async () => {
     if (scannerRef.current && scannerRef.current.isScanning) {
         try {
@@ -135,6 +186,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   };
   
   useEffect(() => {
+    let ignore = false;
     const scan = async () => {
         if (isScanning && activeCameraId) {
             // Ensure previous scanner is stopped before starting a new one
@@ -142,13 +194,20 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 await scannerRef.current.stop();
             }
             
+            if (ignore) return;
+            
             const newScanner = new Html5Qrcode('qr-reader');
             scannerRef.current = newScanner;
 
             const onScanSuccess = (decodedText: string) => {
                 const student = courseStudents.find(s => s.id === decodedText);
-                if (student && !presentStudentIds.includes(student.id)) {
-                    setPresentStudentIds(prev => [...prev, student.id]);
+                if (student) {
+                    setPresentStudentIds(prev => {
+                        if (!prev.includes(student.id)) {
+                             return [...prev, student.id];
+                        }
+                        return prev;
+                    });
                 }
             };
 
@@ -160,9 +219,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     (errorMessage) => { /* ignore errors */ }
                 );
             } catch (err) {
-                console.error("Error starting scanner: ", err);
-                setError('Không thể khởi động camera. Hãy thử lại.');
-                stopScanner();
+                if (!ignore) {
+                    console.error("Error starting scanner: ", err);
+                    setError('Không thể khởi động camera. Hãy thử lại.');
+                    stopScanner();
+                }
             }
         }
     }
@@ -170,11 +231,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
     // Cleanup function
     return () => {
+        ignore = true;
         if(scannerRef.current && scannerRef.current.isScanning) {
             scannerRef.current.stop().catch(err => console.error('Cleanup stop failed', err));
         }
     };
-}, [isScanning, activeCameraId]); // Only re-run when scanning state or camera changes
+}, [isScanning, activeCameraId, courseStudents]);
 
 
   const handleSwitchCamera = () => {
@@ -184,7 +246,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
           setActiveCameraId(cameras[nextIndex].id);
       }
   };
-  // --- END OF QR SCANNER LOGIC ---
   
   const handleAttendanceToggle = (studentId: string) => {
       setPresentStudentIds(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
@@ -214,6 +275,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     setError(null);
     if (isScanning) await stopScanner();
     
+    // Validate cơ bản
     if (!selectedCourseId || !teacherId || !content) {
         setError('Vui lòng điền đầy đủ: Khóa học, Giảng viên và Nội dung.');
         return;
@@ -251,6 +313,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             return;
         }
 
+        // --- SAVING LOGIC ---
+        // Xác định vai trò người tạo. Ưu tiên teacher, fallback về team_leader.
+        const createdByRole = currentUser?.role === UserRole.TEACHER ? 'teacher' : 'team_leader';
+        const creatorId = currentUser?.id || 'unknown';
+
         const sessionData = {
             courseId: selectedCourseId,
             startTimestamp,
@@ -267,19 +334,20 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         } else if (context?.addSession) {
              await context.addSession({
                  ...sessionData,
-                 createdBy: currentUser?.role === UserRole.TEACHER ? 'teacher' : 'team_leader', 
-                 creatorId: currentUser?.id || ''
+                 createdBy: createdByRole,
+                 creatorId: creatorId
              } as any);
              onClose();
         }
-    } catch (err: any) {        setError(err.message || 'Đã có lỗi xảy ra.');
+    } catch (err: any) {        
+        setError(err.message || 'Đã có lỗi xảy ra.');
     } finally {
         setIsLoading(false);
     }
   };
 
   const getCourseDisplayString = (courseId: string) => {
-      const course = courses.find(c => c.id === courseId);
+      const course = allCourses.find(c => c.id === courseId);
       return course ? `${course.name} - K${course.courseNumber}` : 'N/A';
   };
 
@@ -296,7 +364,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         </header>
 
         <form onSubmit={handleSubmit} className="flex-grow flex flex-col min-h-0">
-            <div className="flex-grow p-5 space-y-5 overflow-y-auto pb-20">
+            <div className="flex-grow p-5 space-y-5 overflow-y-auto pb-20 custom-scrollbar">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Loại hình</label>
@@ -325,10 +393,20 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 <div className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Khóa đào tạo</label>
-                        <select value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
-                            <option value="">-- Chọn khóa đào tạo --</option>
-                            {courses.map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)}
+                        <select 
+                            value={selectedCourseId} 
+                            onChange={(e) => setSelectedCourseId(e.target.value)} 
+                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                            disabled={!!initialData} 
+                        >
+                            <option value="">-- Chọn khóa đào tạo (Đang hoạt động) --</option>
+                            {activeCourses.length > 0 ? (
+                                activeCourses.map(c => <option key={c.id} value={c.id}>{getCourseDisplayString(c.id)}</option>)
+                            ) : (
+                                <option disabled>Không có khóa học nào khả dụng</option>
+                            )}
                         </select>
+                        {activeCourses.length === 0 && <p className="text-xs text-red-500 mt-1">Bạn chưa được phân công khóa học nào hoặc tất cả khóa học đã kết thúc quá 7 ngày.</p>}
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Giảng viên</label>
@@ -344,6 +422,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                     <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" disabled={!selectedCourseId} placeholder="Nhập nội dung..." rows={3}></textarea>
                 </div>
                 
+                {selectedCourseId && courseStudents.length === 0 && (
+                    <div className="p-3 bg-yellow-50 text-yellow-700 rounded-lg text-sm text-center">
+                        Khóa học này chưa có học viên nào.
+                    </div>
+                )}
+
                 {courseStudents.length > 0 && (
                     <div className="border-t border-gray-100 pt-4">
                          <div className="flex justify-between items-center mb-3">
@@ -382,7 +466,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                              <span className="text-xs text-gray-500">Hoặc chọn thủ công:</span>
                              <button type="button" onClick={handleSelectAll} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
                                 {presentStudentIds.length === courseStudents.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                            </button>
+                             </button>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
