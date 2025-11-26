@@ -54,6 +54,18 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [activeCameraId, setActiveCameraId] = useState<string | undefined>(undefined);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
+  // Derived data
+  const availableTeachers = useMemo(() => {
+    if (!selectedCourseId) return [];
+    const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
+    return teachers.filter(t => (t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty) || t.id === teacherId);
+  }, [selectedCourseId, teachers, sessionType, teacherId]);
+  
+  const courseStudents = useMemo(() => {
+      if (!selectedCourseId) return [];
+      return students.filter(s => s.courseId === selectedCourseId);
+  }, [selectedCourseId, students]);
+
   // Initialize form
   useEffect(() => {
     if (isOpen) {
@@ -91,8 +103,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
   const stopScanner = () => {
       if (scannerRef.current) {
-          scannerRef.current.clear()
-              .catch(err => console.error("Scanner clear failed.", err));
+          try {
+            scannerRef.current.clear();
+          } catch (err) {
+            console.error("Scanner clear failed.", err)
+          }
           scannerRef.current = null;
       }
       setIsScanning(false);
@@ -149,7 +164,11 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
               }
           };
 
-          newScanner.render(onScanSuccess, (error) => { /* ignore errors */ });
+          const onScanFailure = (error: any) => {
+            // ignore scan failure
+          };
+
+          newScanner.render(onScanSuccess, onScanFailure);
       }
   }, [isScanning, activeCameraId, courseStudents, presentStudentIds]); // Dependencies that re-trigger the scanner
 
@@ -162,17 +181,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   };
   // --- END OF QR SCANNER LOGIC ---
   
-  const availableTeachers = useMemo(() => {
-    if (!selectedCourseId) return [];
-    const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
-    return teachers.filter(t => (t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty) || t.id === teacherId);
-  }, [selectedCourseId, teachers, sessionType, teacherId]);
-  
-  const courseStudents = useMemo(() => {
-      if (!selectedCourseId) return [];
-      return students.filter(s => s.courseId === selectedCourseId);
-  }, [selectedCourseId, students]);
-
   const handleAttendanceToggle = (studentId: string) => {
       setPresentStudentIds(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
   };
