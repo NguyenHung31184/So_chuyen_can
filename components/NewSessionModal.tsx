@@ -2,8 +2,8 @@ import React, { useState, useContext, useMemo, useEffect, useRef } from 'react';
 import { AppContext } from '../contexts/AppContext';
 import { Session, TeacherSpecialty, UserRole, Course, Student, User } from '../types';
 import { format } from 'date-fns';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode'; // Import Html5Qrcode
-import type { CameraDevice } from 'html5-qrcode'; // Import CameraDevice type
+import { Html5Qrcode } from 'html5-qrcode'; // Use the core engine
+import type { CameraDevice } from 'html5-qrcode';
 
 interface NewSessionModalProps {
   isOpen: boolean;
@@ -52,7 +52,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [activeCameraId, setActiveCameraId] = useState<string | undefined>(undefined);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null); // Use Html5Qrcode ref
 
   // Derived data
   const availableTeachers = useMemo(() => {
@@ -94,31 +94,26 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         }
         setError(null);
         if (isScanning) {
-            stopScanner(); // Stop scanner if modal is re-opened
+            stopScanner();
         }
     }
   }, [isOpen, initialData, currentUser]);
 
-  // --- QR SCANNER LOGIC (IMPROVED) ---
+  // --- QR SCANNER LOGIC (CLEAN UI) ---
 
-  const stopScanner = () => {
-      if (scannerRef.current) {
-          try {
-            scannerRef.current.clear();
-          } catch (err) {
-            console.error("Scanner clear failed.", err)
-          }
-          scannerRef.current = null;
-      }
-      setIsScanning(false);
-      setCameras([]);
-      setActiveCameraId(undefined);
+  const stopScanner = async () => {
+    if (scannerRef.current && scannerRef.current.isScanning) {
+        try {
+            await scannerRef.current.stop();
+        } catch (err) {
+            console.error("Error stopping the scanner.", err);
+        }
+    }
+    scannerRef.current = null;
+    setIsScanning(false);
+    setCameras([]);
+    setActiveCameraId(undefined);
   };
-
-  useEffect(() => {
-      // Cleanup scanner when component unmounts or modal closes
-      return () => stopScanner();
-  }, []);
 
   const startScanner = async () => {
       setIsScanning(true);
@@ -126,10 +121,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
           const availableCameras = await Html5Qrcode.getCameras();
           if (availableCameras && availableCameras.length > 0) {
               setCameras(availableCameras);
-              // Prioritize back camera ('environment'), otherwise use the first camera
               const backCamera = availableCameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('môi trường'));
-              const initialCameraId = backCamera ? backCamera.id : availableCameras[0].id;
-              setActiveCameraId(initialCameraId);
+              setActiveCameraId(backCamera ? backCamera.id : availableCameras[0].id);
           } else {
               setError('Không tìm thấy camera trên thiết bị này.');
               setIsScanning(false);
@@ -141,36 +134,48 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       }
   };
   
-  // Effect to initialize or restart scanner when active camera changes
   useEffect(() => {
-      if (isScanning && activeCameraId) {
-          // Clear previous scanner instance if it exists
-          if (scannerRef.current) {
-              scannerRef.current.clear().catch(e => console.error("Error clearing old scanner", e));
-          }
+    const scan = async () => {
+        if (isScanning && activeCameraId) {
+            // Ensure previous scanner is stopped before starting a new one
+            if (scannerRef.current && scannerRef.current.isScanning) {
+                await scannerRef.current.stop();
+            }
+            
+            const newScanner = new Html5Qrcode('qr-reader');
+            scannerRef.current = newScanner;
 
-          const newScanner = new Html5QrcodeScanner(
-              'qr-reader',
-              { fps: 10, qrbox: { width: 250, height: 250 }, supportedScanTypes: [] },
-              false
-          );
-          scannerRef.current = newScanner;
+            const onScanSuccess = (decodedText: string) => {
+                const student = courseStudents.find(s => s.id === decodedText);
+                if (student && !presentStudentIds.includes(student.id)) {
+                    setPresentStudentIds(prev => [...prev, student.id]);
+                }
+            };
 
-          const onScanSuccess = (decodedText: string) => {
-              const student = courseStudents.find(s => s.id === decodedText);
-              if (student && !presentStudentIds.includes(student.id)) {
-                  setPresentStudentIds(prev => [...prev, student.id]);
-                  // Optional: Play a sound or give visual feedback
-              }
-          };
+            try {
+                await newScanner.start(
+                    activeCameraId,
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    onScanSuccess,
+                    (errorMessage) => { /* ignore errors */ }
+                );
+            } catch (err) {
+                console.error("Error starting scanner: ", err);
+                setError('Không thể khởi động camera. Hãy thử lại.');
+                stopScanner();
+            }
+        }
+    }
+    scan();
 
-          const onScanFailure = (error: any) => {
-            // ignore scan failure
-          };
+    // Cleanup function
+    return () => {
+        if(scannerRef.current && scannerRef.current.isScanning) {
+            scannerRef.current.stop().catch(err => console.error('Cleanup stop failed', err));
+        }
+    };
+}, [isScanning, activeCameraId]); // Only re-run when scanning state or camera changes
 
-          newScanner.render(onScanSuccess, onScanFailure);
-      }
-  }, [isScanning, activeCameraId, courseStudents, presentStudentIds]); // Dependencies that re-trigger the scanner
 
   const handleSwitchCamera = () => {
       if (cameras.length > 1 && activeCameraId) {
@@ -207,14 +212,13 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (isScanning) stopScanner(); // Dừng scanner nếu đang chạy
+    if (isScanning) await stopScanner();
     
     if (!selectedCourseId || !teacherId || !content) {
         setError('Vui lòng điền đầy đủ: Khóa học, Giảng viên và Nội dung.');
         return;
     }
 
-    // Validation: Bắt buộc điểm danh ít nhất 1 học viên
     if (presentStudentIds.length === 0 && courseStudents.length > 0) {
         setError('Vui lòng điểm danh ít nhất 1 học viên để ghi nhận buổi học.');
         return;
@@ -268,8 +272,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
              } as any);
              onClose();
         }
-    } catch (err: any) {
-        setError(err.message || 'Đã có lỗi xảy ra.');
+    } catch (err: any) {        setError(err.message || 'Đã có lỗi xảy ra.');
     } finally {
         setIsLoading(false);
     }
@@ -292,9 +295,8 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
           </button>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex-grow contents">
-            <div className="flex-grow p-5 space-y-5 overflow-y-auto">
-                {/* Form fields... */}
+        <form onSubmit={handleSubmit} className="flex-grow flex flex-col min-h-0">
+            <div className="flex-grow p-5 space-y-5 overflow-y-auto pb-20">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Loại hình</label>
@@ -370,9 +372,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                         </div>
 
                         {isScanning && (
-                            <div className="mb-4 bg-black rounded-xl overflow-hidden shadow-inner border-4 border-indigo-500 animate-fade-in-fast">
-                                <div id="qr-reader" className="w-full"></div>
-                                <p className="text-center text-white text-xs py-2 font-medium">Hướng camera về phía mã QR</p>
+                            <div className="mb-4 bg-black rounded-xl overflow-hidden shadow-inner border-4 border-transparent animate-fade-in-fast">
+                                <div id="qr-reader" className="w-full aspect-square bg-gray-900"></div>
+                                <p className="text-center text-white text-xs py-2 font-medium bg-black bg-opacity-30">Hướng camera về phía mã QR</p>
                             </div>
                         )}
                         
@@ -400,7 +402,7 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
                 {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg text-center animate-shake">{error}</div>}
             </div>
 
-            <footer className="p-4 border-t border-gray-100 flex gap-3 bg-gray-50/50">
+            <footer className="flex-shrink-0 p-4 border-t border-gray-100 flex gap-3 bg-gray-50/50">
                 {onDelete && initialData && (
                     <button type="button" onClick={onDelete} className="px-4 py-3 text-red-600 bg-red-50 rounded-xl font-bold hover:bg-red-100 transition-colors">
                         Xóa
