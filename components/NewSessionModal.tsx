@@ -27,7 +27,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     currentUser: propCurrentUser
 }) => {
   const context = useContext(AppContext);
-  // Ưu tiên props, fallback về context, đảm bảo luôn là mảng
   const allCourses = propCourses || context?.courses || [];
   const students = propStudents || context?.students || [];
   const currentUser = propCurrentUser || context?.currentUser;
@@ -57,34 +56,26 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
 
   // --- LOGIC: LỌC KHÓA HỌC (ACTIVE COURSES) ---
   const activeCourses = useMemo(() => {
-    // Lấy đầu ngày hiện tại để so sánh
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Tính mốc thời gian 7 ngày trước (cho phép khóa học đã đóng hiển thị thêm 7 ngày)
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(today.getDate() - 7);
 
     return allCourses.filter(course => {
         // 1. Kiểm tra thời hạn khóa học (Cho phép trễ 7 ngày)
-        // Giả định course.endDate là chuỗi ISO hoặc timestamp
         if (course.endDate) {
             const courseEnd = typeof course.endDate === 'string' ? new Date(course.endDate) : new Date(course.endDate);
-            // Nếu ngày kết thúc NHỎ HƠN 7 ngày trước -> Khóa đã đóng quá lâu -> Ẩn
             if (courseEnd.getTime() < sevenDaysAgo.getTime()) {
                 return false; 
             }
         }
 
         // 2. Kiểm tra phân quyền theo Role
-        // --- ADMIN & MANAGER: Xem HẾT (Toàn quyền) ---
-        // Đảm bảo UserRole.MANAGER đã được định nghĩa trong file types của bạn
         if (currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER) {
             return true;
         }
 
-        // --- TEACHER & TEAM_LEADER & STUDENT: Chỉ xem KHÓA CỦA MÌNH ---
-        // Yêu cầu: ID khóa học phải nằm trong mảng courseIds của User
         if (
             currentUser?.role === UserRole.TEACHER || 
             currentUser?.role === UserRole.TEAM_LEADER ||
@@ -93,7 +84,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             return currentUser.courseIds?.includes(course.id);
         }
 
-        // Mặc định các role khác (nếu có) không thấy gì để bảo mật tuyệt đối
         return false;
     });
   }, [allCourses, currentUser]);
@@ -103,7 +93,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     if (!selectedCourseId) return [];
     const requiredSpecialty = sessionType === 'Lý thuyết' ? TeacherSpecialty.THEORY : TeacherSpecialty.PRACTICE;
     
-    // Lọc giáo viên có chuyên môn phù hợp VÀ được phân công vào khóa học này
     return teachers.filter(t => 
         (t.courseIds?.includes(selectedCourseId) && t.specialty === requiredSpecialty) || t.id === teacherId
     );
@@ -130,16 +119,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
             setPresentStudentIds(initialData.studentIds || initialData.attendees || []);
             setVehicleId(initialData.vehicleId || '');
         } else {
-            // Reset form for new session
             setSessionType('Lý thuyết');
             setDate(new Date().toISOString().split('T')[0]);
             setStartTime('06:00');
             setEndTime('12:00');
             setSelectedCourseId('');
-            
-            // Nếu user là Teacher, tự động điền ID của họ
             setTeacherId(currentUser?.role === UserRole.TEACHER ? currentUser.id : '');
-            
             setContent('');
             setPresentStudentIds([]);
             setVehicleId('');
@@ -189,28 +174,21 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
     let ignore = false;
     const scan = async () => {
         if (isScanning && activeCameraId) {
-            // Ensure previous scanner is stopped before starting a new one
             if (scannerRef.current && scannerRef.current.isScanning) {
                 await scannerRef.current.stop();
             }
-            
             if (ignore) return;
-            
             const newScanner = new Html5Qrcode('qr-reader');
             scannerRef.current = newScanner;
-
             const onScanSuccess = (decodedText: string) => {
                 const student = courseStudents.find(s => s.id === decodedText);
                 if (student) {
                     setPresentStudentIds(prev => {
-                        if (!prev.includes(student.id)) {
-                             return [...prev, student.id];
-                        }
+                        if (!prev.includes(student.id)) return [...prev, student.id];
                         return prev;
                     });
                 }
             };
-
             try {
                 await newScanner.start(
                     activeCameraId,
@@ -228,8 +206,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         }
     }
     scan();
-
-    // Cleanup function
     return () => {
         ignore = true;
         if(scannerRef.current && scannerRef.current.isScanning) {
@@ -237,7 +213,6 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         }
     };
 }, [isScanning, activeCameraId, courseStudents]);
-
 
   const handleSwitchCamera = () => {
       if (cameras.length > 1 && activeCameraId) {
@@ -259,15 +234,12 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
       }
   };
 
-  const checkOverlap = (start: number, end: number, teacherIdToCheck: string) => {
-      const otherSessions = initialData 
-        ? existingSessions.filter(s => s.id !== initialData.id) 
-        : existingSessions;
-
-      return otherSessions.find(s => {
-          if (s.teacherId !== teacherIdToCheck) return false;
-          return (start < s.endTimestamp) && (end > s.startTimestamp);
-      });
+  // --- HELPER: XÁC ĐỊNH CA DẠY (SHIFT) ---
+  const getShift = (dateObj: Date) => {
+      const h = dateObj.getHours();
+      if (h < 12) return 'Sáng';   // Trước 12h trưa
+      if (h < 18) return 'Chiều';  // 12h - 18h
+      return 'Tối';                // Sau 18h
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -291,30 +263,71 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         const startTimestamp = new Date(`${date}T${startTime}`).getTime();
         const endTimestamp = new Date(`${date}T${endTime}`).getTime();
         
+        // Check 1: Thời gian hợp lệ
         if (startTimestamp >= endTimestamp) {
             setError('Thời gian kết thúc phải sau thời gian bắt đầu.');
             setIsLoading(false);
             return;
         }
 
+        // Check 2: Kiểm tra lùi ngày (Max 3 ngày)
+        const inputDate = new Date(date);
+        const today = new Date();
+        inputDate.setHours(0,0,0,0);
+        today.setHours(0,0,0,0);
+        
+        const diffTime = today.getTime() - inputDate.getTime();
+        const diffDays = diffTime / (1000 * 3600 * 24);
+
+        if (diffDays > 3) {
+             setError('Quy định: Không được phép ghi nhận lùi quá 3 ngày.');
+             setIsLoading(false);
+             return;
+        }
+
+        // Check 3: Cảnh báo thời lượng dài
         const durationHours = (endTimestamp - startTimestamp) / (1000 * 60 * 60);
         if (durationHours > 5) {
-             if (!window.confirm(`Buổi học này kéo dài ${durationHours.toFixed(1)} tiếng. Bạn có chắc chắn thời gian này là chính xác?`)) {
+             if (!window.confirm(`Buổi học kéo dài ${durationHours.toFixed(1)} tiếng. Bạn có chắc chắn?`)) {
                  setIsLoading(false);
                  return;
              }
         }
 
-        const conflict = checkOverlap(startTimestamp, endTimestamp, teacherId);
-        if (conflict) {
-            const conflictDate = format(new Date(conflict.startTimestamp), 'dd/MM/yyyy HH:mm');
-            setError(`Lỗi: Giáo viên này đã có lịch dạy khác bị trùng vào lúc ${conflictDate}.`);
+        // --- CHECK 4: KIỂM TRA TRÙNG LẶP CHÍNH XÁC (Dựa trên Shift + CreatorID) ---
+        // Mục tiêu: Ngăn chặn 1 người tạo 2 bản ghi cho cùng 1 ca dạy của cùng 1 lớp
+        // Nhưng cho phép Giáo viên và Nhóm trưởng tạo song song.
+        
+        const currentStartObj = new Date(startTimestamp);
+        const currentShift = getShift(currentStartObj);
+        const currentDateStr = format(currentStartObj, 'yyyy-MM-dd');
+        const currentCreatorId = currentUser?.id || 'unknown';
+
+        const duplicateSession = existingSessions.find(s => {
+            // Bỏ qua chính bản ghi đang sửa (nếu có)
+            if (initialData && s.id === initialData.id) return false;
+
+            const sDate = new Date(s.startTimestamp);
+            const sShift = getShift(sDate);
+            const sDateStr = format(sDate, 'yyyy-MM-dd');
+
+            // Điều kiện trùng lặp: Cùng Ngày + Cùng Ca + Cùng Giáo viên + Cùng Khóa học + CÙNG NGƯỜI TẠO
+            return (
+                sDateStr === currentDateStr &&          // Cùng ngày
+                sShift === currentShift &&              // Cùng ca (Sáng/Chiều/Tối)
+                s.teacherId === teacherId &&            // Cùng giáo viên
+                s.courseId === selectedCourseId &&      // Cùng khóa học
+                s.creatorId === currentCreatorId        // Cùng một người tạo
+            );
+        });
+
+        if (duplicateSession) {
+            setError(`Bạn đã ghi nhận buổi học này rồi (Ca ${currentShift} ngày ${format(currentStartObj, 'dd/MM/yyyy')}). Không thể tạo bản ghi trùng.`);
             setIsLoading(false);
             return;
         }
 
         // --- SAVING LOGIC ---
-        // Xác định vai trò người tạo. Ưu tiên teacher, fallback về team_leader.
         const createdByRole = currentUser?.role === UserRole.TEACHER ? 'teacher' : 'team_leader';
         const creatorId = currentUser?.id || 'unknown';
 
@@ -332,9 +345,9 @@ const NewSessionModal: React.FC<NewSessionModalProps> = ({
         if (onSave) {
             await onSave(sessionData);
         } else if (context?.addSession) {
-             await context.addSession({
-                 ...sessionData,
-                 createdBy: createdByRole,
+             await context.addSession({ 
+                 ...sessionData, 
+                 createdBy: createdByRole, 
                  creatorId: creatorId
              } as any);
              onClose();
